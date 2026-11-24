@@ -125,10 +125,11 @@ const AdminRecycleBinPage: React.FC<AdminRecycleBinPageProps> = ({
       if (selectedType !== 'ALL' && item.itemType !== selectedType) {
         return false;
       }
-      // Site Scoping check for site-scoped supervisors (UDF-AUD-295)
-      if (!hasGlobalView && allowedSiteIds.length > 0) {
+      // Site Scoping check for site-scoped supervisors (UDF-AUD-295, UDF-AUD-447)
+      if (!hasGlobalView) {
+        if (!allowedSiteIds || allowedSiteIds.length === 0) return false;
         const itemSiteId = item.metadata?.siteId || item.data?.currentSiteId || item.data?.siteId || '';
-        if (itemSiteId && !allowedSiteIds.includes(itemSiteId)) {
+        if (!itemSiteId || !allowedSiteIds.includes(itemSiteId)) {
           return false;
         }
       }

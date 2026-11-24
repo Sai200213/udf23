@@ -144,9 +144,13 @@ const AdminLeaveManagementPage: React.FC<AdminLeaveManagementPageProps> = ({
             const shortKey = keyMap[type] || type.toLowerCase();
             const configType = leavePolicy?.leaveTypes?.find(lt => lt.label === type || lt.typeId === type || lt.typeId === shortKey);
             const total = configType?.defaultQuota ?? 12;
-            const hasExplicitRemaining = selectedEmpRecord.leaveBalance?.[shortKey] !== undefined;
-            const remaining = hasExplicitRemaining ? Number(selectedEmpRecord.leaveBalance[shortKey]) : total;
-            const used = Math.max(0, total - remaining);
+            const rawBalance = selectedEmpRecord.leaveBalance?.[shortKey];
+            const hasExplicitRemaining = rawBalance !== undefined;
+            const numRaw = Number(rawBalance);
+            const remaining = hasExplicitRemaining ? Math.max(0, numRaw) : total;
+            const used = hasExplicitRemaining 
+                ? (numRaw < 0 ? Math.min(total, -numRaw) : Math.max(0, total - numRaw))
+                : 0;
 
             if (type === LeaveType.UNPAID) return { total: '∞', used, remaining: '∞' };
             return { total, used, remaining: Math.max(0, remaining) };

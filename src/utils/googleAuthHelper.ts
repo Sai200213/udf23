@@ -60,15 +60,16 @@ export const getGoogleCredentialSafely = async (): Promise<SafeGoogleResult> => 
             if (!userCred.user.email) throw new Error('Google account did not return an email address.');
             const idToken = await userCred.user.getIdToken();
             const res = { uid: userCred.user.uid, email: userCred.user.email, idToken };
-            await secAuth.signOut();
-            try {
-                const secApp = getApp('GoogleLinkerApp');
-                await deleteApp(secApp);
-            } catch {}
             return res;
         } catch (error: any) {
             log.error('Native Safe Google error:', error);
             throw error;
+        } finally {
+            try {
+                const secApp = getApp('GoogleLinkerApp');
+                await getAuth(secApp).signOut().catch(() => {});
+                await deleteApp(secApp);
+            } catch {}
         }
     } else {
         try {
@@ -80,15 +81,16 @@ export const getGoogleCredentialSafely = async (): Promise<SafeGoogleResult> => 
             if (!userCred.user.email) throw new Error('Google account did not return an email address.');
             const idToken = await userCred.user.getIdToken();
             const res = { uid: userCred.user.uid, email: userCred.user.email, idToken };
-            await secAuth.signOut();
-            try {
-                const secApp = getApp('GoogleLinkerApp');
-                await deleteApp(secApp);
-            } catch {}
             return res;
         } catch (error: any) {
             log.error('Web Safe Google error:', error);
             throw error;
+        } finally {
+            try {
+                const secApp = getApp('GoogleLinkerApp');
+                await getAuth(secApp).signOut().catch(() => {});
+                await deleteApp(secApp);
+            } catch {}
         }
     }
 };

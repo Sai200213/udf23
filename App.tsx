@@ -1140,15 +1140,19 @@ const App: React.FC = () => {
   // EMPLOYEES get only their own submissions
   const hasSubmissionsSubscribedRef = useRef(false);
   const submissionsUnsubRef = useRef<() => void>(() => {});
+  const subscribedKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!authUser) {
+    const currentKey = authUser ? `${authUser.type}:${authUser.id}` : null;
+    if (!authUser || (subscribedKeyRef.current && subscribedKeyRef.current !== currentKey)) {
       hasSubmissionsSubscribedRef.current = false;
+      subscribedKeyRef.current = null;
       submissionsUnsubRef.current();
       submissionsUnsubRef.current = () => {};
       setSubmittedForms([]);
-      return;
+      if (!authUser) return;
     }
+    subscribedKeyRef.current = currentKey;
 
     if (authUser.type === UserType.ADMIN) {
       const shouldSubscribe = 

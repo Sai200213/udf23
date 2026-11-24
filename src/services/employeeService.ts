@@ -2485,6 +2485,28 @@ export const softDeleteSubmission = async (submissionId: string) => {
                 isActive: false
             });
         }
+
+        // 3. Move to universal recycle bin (UDF-AUD-38)
+        try {
+            const { moveToRecycleBin } = await import('./recycleBinService');
+            const currentUser = auth.currentUser;
+            await moveToRecycleBin({
+                itemType: 'SUBMISSION',
+                name: applicantName || 'Onboarding Submission',
+                originalId: submissionId,
+                originalCollection: SUBMISSIONS_COLLECTION,
+                data: data,
+                deletedByUid: currentUser?.uid || 'admin',
+                deletedByName: currentUser?.displayName || currentUser?.email || 'Admin',
+                metadata: {
+                    employeeId: currentUniqueId,
+                    siteId: (data as any).siteId || (data as any).currentSiteId || '',
+                    siteName: (data as any).siteName || ''
+                }
+            });
+        } catch (binErr) {
+            console.warn('[RECYCLE_BIN_WARN] Could not move submission to recycle bin:', binErr);
+        }
     }
 };
 
@@ -2546,6 +2568,28 @@ export const softDeleteEmployee = async (identifier: string) => {
             await moveEmployeeFolderToRecycleBin(name, empId, empData.driveFolderName);
         } catch (driveErr) {
             console.warn("[DRIVE_WARN] Could not move Drive folder to Recycle Bin:", driveErr);
+        }
+
+        // Move to universal recycle bin (UDF-AUD-38)
+        try {
+            const { moveToRecycleBin } = await import('./recycleBinService');
+            const currentUser = auth.currentUser;
+            await moveToRecycleBin({
+                itemType: 'EMPLOYEE',
+                name: name || (empData as any).fullName || 'Employee Record',
+                originalId: docId,
+                originalCollection: EMPLOYEES_COLLECTION,
+                data: empData,
+                deletedByUid: currentUser?.uid || 'admin',
+                deletedByName: currentUser?.displayName || currentUser?.email || 'Admin',
+                metadata: {
+                    employeeId: empId,
+                    siteId: empData.currentSiteId || (empData as any).siteId || '',
+                    siteName: (empData as any).siteName || ''
+                }
+            });
+        } catch (binErr) {
+            console.warn('[RECYCLE_BIN_WARN] Could not move employee to recycle bin:', binErr);
         }
     } else {
         // Fallback: Check if it is a pending submission

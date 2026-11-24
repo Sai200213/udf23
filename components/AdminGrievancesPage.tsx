@@ -175,13 +175,8 @@ const AdminGrievancesPage: React.FC<AdminGrievancesPageProps> = ({
     const filteredComplaints = useMemo(() => {
         if (!canViewGrievances) return [];
         return complaints.filter(c => {
-            if (!hasGrievanceScopeAll && allowedSiteIds && allowedSiteIds.length > 0) {
-                if (c.siteId) {
-                    if (!allowedSiteIds.includes(c.siteId)) return false;
-                } else {
-                    // Protect confidentiality: complaints with missing site are hidden from site-scoped admins
-                    return false;
-                }
+            if (!hasGrievanceScopeAll) {
+                if (!allowedSiteIds || allowedSiteIds.length === 0 || !c.siteId || !allowedSiteIds.includes(c.siteId)) return false;
             }
             const matchesSearch = 
                 (c.userName || '').toLowerCase().includes(complaintSearch.toLowerCase()) ||
@@ -196,9 +191,9 @@ const AdminGrievancesPage: React.FC<AdminGrievancesPageProps> = ({
     const filteredRewards = useMemo(() => {
         if (!canViewRewards) return [];
         return redemptions.filter(r => {
-            // Site Scope Check (UDF-AUD-275)
-            if (!isSuperAdmin && allowedSiteIds && allowedSiteIds.length > 0) {
-                if ((r as any).siteId && !allowedSiteIds.includes((r as any).siteId)) return false;
+            // Site Scope Check (UDF-AUD-275, UDF-AUD-447)
+            if (!isSuperAdmin) {
+                if (!allowedSiteIds || allowedSiteIds.length === 0 || !(r as any).siteId || !allowedSiteIds.includes((r as any).siteId)) return false;
             }
             const matchesSearch = 
                 (r.userName || '').toLowerCase().includes(rewardSearch.toLowerCase()) ||

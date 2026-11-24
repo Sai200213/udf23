@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { AccountUpdateRequest, SubmittedFormData, RequestStatus, FormField, FieldType, Role, WorkflowConfig } from '../../types';
+import { AccountUpdateRequest, SubmittedFormData, RequestStatus, FormField, FieldType, Role, WorkflowConfig, FormSection } from '../../types';
 import Button from '../common/Button';
 import Input from '../common/Input';
 import Select from '../common/Select';
@@ -16,10 +16,11 @@ interface EmployeeAccountUpdatePageProps {
   allowedFieldIds?: string[];
   roles?: Role[];
   workflowConfigs?: WorkflowConfig[];
+  formSections?: FormSection[];
 }
 
 const EmployeeAccountUpdatePage: React.FC<EmployeeAccountUpdatePageProps> = ({
-  employeeId, employeeData, existingRequests, onSubmitRequest, allowedFieldIds = [], roles, workflowConfigs
+  employeeId, employeeData, existingRequests, onSubmitRequest, allowedFieldIds = [], roles, workflowConfigs, formSections = []
 }) => {
   const [selectedFieldId, setSelectedFieldId] = useState<string>('');
   const [requestedValue, setRequestedValue] = useState<any>('');
@@ -30,7 +31,10 @@ const EmployeeAccountUpdatePage: React.FC<EmployeeAccountUpdatePageProps> = ({
 
   const editableFields = useMemo(() => {
     const fields: FormField[] = [];
-    (employeeData?.originalFormSections || []).forEach(section => {
+    const sectionsToUse = (employeeData?.originalFormSections && employeeData.originalFormSections.length > 0)
+      ? employeeData.originalFormSections
+      : formSections;
+    sectionsToUse.forEach(section => {
       (section.fields || []).forEach(field => {
         // Filter based on allowedFieldIds passed from App config
         if (allowedFieldIds.includes(field.id)) {
@@ -41,7 +45,7 @@ const EmployeeAccountUpdatePage: React.FC<EmployeeAccountUpdatePageProps> = ({
       });
     });
     return fields.sort((a, b) => a.label.localeCompare(b.label));
-  }, [employeeData?.originalFormSections, allowedFieldIds]);
+  }, [employeeData?.originalFormSections, formSections, allowedFieldIds]);
 
   const selectedFieldDefinition = useMemo(() => {
     return editableFields.find(f => f.id === selectedFieldId);

@@ -433,9 +433,11 @@ const AdminMasterEmployeeListPage: React.FC<AdminMasterEmployeeListPageProps> = 
       .filter(f => !f.label?.toLowerCase().includes('client id') && !f.label?.toLowerCase().includes('client-specific id'));
   }, [safeSections]);
 
+  const currentRequestId = useRef(0);
   // Fetch Data Function
   const loadPage = async (direction: 'next' | 'prev' | 'initial' = 'initial') => {
-    if (isLoading) return;
+    if (isLoading && direction !== 'initial') return;
+    const reqId = ++currentRequestId.current;
 
     if (!hasViewScopeAll && (!effectiveAllowedSiteIds || effectiveAllowedSiteIds.length === 0)) {
       setPaginatedData([]);
@@ -487,6 +489,7 @@ const AdminMasterEmployeeListPage: React.FC<AdminMasterEmployeeListPageProps> = 
         hasViewScopeAll ? 'ALL' : (effectiveAllowedSiteIds || [])
       );
 
+      if (reqId !== currentRequestId.current) return;
       setPaginatedData(result.employees || []);
       setLastDoc(result.lastDoc);
       setHasMore(result.hasMore);
@@ -500,10 +503,13 @@ const AdminMasterEmployeeListPage: React.FC<AdminMasterEmployeeListPageProps> = 
 
       setHasLoadedInitial(true);
     } catch (err: any) {
+      if (reqId !== currentRequestId.current) return;
       console.error("Pagination Error:", err);
       setError(err.message || "Failed to load data.");
     } finally {
-      setIsLoading(false);
+      if (reqId === currentRequestId.current) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -1800,7 +1806,7 @@ const AdminMasterEmployeeListPage: React.FC<AdminMasterEmployeeListPageProps> = 
                       <div className="grid grid-cols-2 gap-3">
                         <Select label="Deployment Site" value={newAssignmentSiteId} onChange={e => { setNewAssignmentSiteId(e.target.value); setNewAssignmentSubUnitId(''); setNewAssignmentDesignation(''); }}>
                           <option value="">Select Site...</option>
-                          {safeSites.filter(s => s && s.status === 'Active' && (!effectiveAllowedSiteIds || effectiveAllowedSiteIds.length === 0 || effectiveAllowedSiteIds.includes(s.id))).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                          {safeSites.filter(s => s && s.status === 'Active' && (hasViewScopeAll || (effectiveAllowedSiteIds && effectiveAllowedSiteIds.includes(s.id)))).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                         </Select>
                         <Select label="Sub-unit (Optional)" value={newAssignmentSubUnitId} onChange={e => setNewAssignmentSubUnitId(e.target.value)} disabled={!newAssignmentSiteId}>
                           <option value="">No specific unit</option>
@@ -2229,7 +2235,7 @@ const AdminMasterEmployeeListPage: React.FC<AdminMasterEmployeeListPageProps> = 
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
                   >
                     <option value="">Select Site</option>
-                    {sites.filter(s => s && s.status === 'Active' && (!effectiveAllowedSiteIds || effectiveAllowedSiteIds.length === 0 || effectiveAllowedSiteIds.includes(s.id))).map(site => (
+                    {sites.filter(s => s && s.status === 'Active' && (hasViewScopeAll || (effectiveAllowedSiteIds && effectiveAllowedSiteIds.includes(s.id)))).map(site => (
                       <option key={site.id} value={site.id}>{site.name}</option>
                     ))}
                   </select>

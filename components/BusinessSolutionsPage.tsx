@@ -23,11 +23,19 @@ import PublicHeader from './common/PublicHeader';
 import PublicFooter from './common/PublicFooter';
 import { getWebsiteConfig, WebsiteServiceData } from '../src/services/websiteService';
 import SEOHead from '../src/components/common/SEOHead';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../src/firebase/config';
 
 const BusinessSolutionsPage: React.FC = () => {
     const navigate = useNavigate();
     const [config, setConfig] = useState<WebsiteServiceData | null>(null);
     const [loading, setLoading] = useState(true);
+    const [companyName, setCompanyName] = useState('');
+    const [contactNamePhone, setContactNamePhone] = useState('');
+    const [techScope, setTechScope] = useState('');
+    const [submitting, setSubmitting] = useState(false);
+    const [submitted, setSubmitted] = useState(false);
+    const [submitError, setSubmitError] = useState('');
 
     useEffect(() => {
         window.scrollTo(0, 0);
@@ -102,6 +110,11 @@ const BusinessSolutionsPage: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
+            <SEOHead
+                title="B2B Corporate Security Solutions | Unique Delta Force"
+                description="Enterprise corporate guarding, industrial facility management, armed escorts, and electronic surveillance."
+                canonicalPath="/business"
+            />
             <PublicHeader />
 
             {/* Corporate Banner Section */}
@@ -311,22 +324,101 @@ const BusinessSolutionsPage: React.FC = () => {
                             </ul>
                         </div>
 
-                        <form className="space-y-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs" onSubmit={(e) => { e.preventDefault(); alert('Proposal request sent successfully! Our representative will call you shortly.'); }}>
-                            <div>
-                                <label className="block text-[10px] uppercase font-extrabold tracking-wider text-slate-500 mb-1.5">Company Name</label>
-                                <input required type="text" placeholder="e.g. Acme Tech Park" className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                            </div>
-                            <div>
-                                <label className="block text-[10px] uppercase font-extrabold tracking-wider text-slate-500 mb-1.5">Contact Name & Phone</label>
-                                <input required type="text" placeholder="e.g. Ramesh Kumar (+91 90000 00000)" className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                            </div>
-                            <div>
-                                <label className="block text-[10px] uppercase font-extrabold tracking-wider text-slate-500 mb-1.5">Required Guards / Tech Scope</label>
-                                <textarea required rows={3} placeholder="Briefly describe your requirements (e.g. 5 guards, shift timings, drone patrols)..." className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"></textarea>
-                            </div>
-                            <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm">
-                                Submit Quote Request
-                            </button>
+                        <form 
+                            id="proposal-form"
+                            className="space-y-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs" 
+                            onSubmit={async (e) => { 
+                                e.preventDefault(); 
+                                if (!companyName.trim() || !contactNamePhone.trim() || !techScope.trim()) {
+                                    setSubmitError('Please fill in all required fields.');
+                                    return;
+                                }
+                                setSubmitting(true);
+                                setSubmitError('');
+                                try {
+                                    await addDoc(collection(db, 'contact_messages'), {
+                                        name: contactNamePhone.trim().slice(0, 100),
+                                        email: 'b2b-proposal@udfonline.in',
+                                        phone: contactNamePhone.replace(/[^\d+]/g, '').slice(0, 15) || '+910000000000',
+                                        subject: `B2B Proposal Request: ${companyName.trim()}`,
+                                        message: `Company: ${companyName.trim()}\nContact: ${contactNamePhone.trim()}\nScope:\n${techScope.trim()}`,
+                                        honeypot: '',
+                                        timestamp: serverTimestamp()
+                                    });
+                                    setSubmitted(true);
+                                    setCompanyName('');
+                                    setContactNamePhone('');
+                                    setTechScope('');
+                                } catch (err: any) {
+                                    console.error('Failed to submit proposal request:', err);
+                                    setSubmitError('Failed to send proposal request. Please contact us directly via phone or email.');
+                                } finally {
+                                    setSubmitting(false);
+                                }
+                            }}
+                        >
+                            {submitted ? (
+                                <div className="p-4 bg-green-50 border border-green-200 rounded-xl text-center">
+                                    <CheckCircle2 size={28} className="mx-auto text-green-600 mb-2" />
+                                    <h4 className="text-sm font-bold text-green-900 mb-1">Proposal Request Received</h4>
+                                    <p className="text-xs text-green-700">Thank you! An Enterprise Security Director from Unique Delta Force will contact you shortly.</p>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setSubmitted(false)} 
+                                        className="mt-3 text-xs font-bold text-green-800 underline"
+                                    >
+                                        Submit another request
+                                    </button>
+                                </div>
+                            ) : (
+                                <>
+                                    {submitError && (
+                                        <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl">
+                                            {submitError}
+                                        </div>
+                                    )}
+                                    <div>
+                                        <label className="block text-[10px] uppercase font-extrabold tracking-wider text-slate-500 mb-1.5">Company Name *</label>
+                                        <input 
+                                            required 
+                                            type="text" 
+                                            value={companyName}
+                                            onChange={e => setCompanyName(e.target.value)}
+                                            placeholder="e.g. Acme Tech Park" 
+                                            className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" 
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] uppercase font-extrabold tracking-wider text-slate-500 mb-1.5">Contact Name & Phone *</label>
+                                        <input 
+                                            required 
+                                            type="text" 
+                                            value={contactNamePhone}
+                                            onChange={e => setContactNamePhone(e.target.value)}
+                                            placeholder="e.g. Ramesh Kumar (+91 90000 00000)" 
+                                            className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" 
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] uppercase font-extrabold tracking-wider text-slate-500 mb-1.5">Required Guards / Tech Scope *</label>
+                                        <textarea 
+                                            required 
+                                            rows={3} 
+                                            value={techScope}
+                                            onChange={e => setTechScope(e.target.value)}
+                                            placeholder="Briefly describe your requirements (e.g. 5 guards, shift timings, drone patrols)..." 
+                                            className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                                        ></textarea>
+                                    </div>
+                                    <button 
+                                        type="submit" 
+                                        disabled={submitting}
+                                        className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"
+                                    >
+                                        {submitting ? 'Submitting Proposal Request...' : 'Submit Quote Request'}
+                                    </button>
+                                </>
+                            )}
                         </form>
                     </div>
                 </div>

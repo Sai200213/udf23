@@ -31,8 +31,9 @@ export const permanentDeleteEmployeeFolder = async (employeeName: string, _uniqu
 export const renameEmployeeFolder = async (oldName: string, newName: string): Promise<void> => {
     log.log(`[DRIVE_SERVICE] Renaming folder: ${oldName} -> ${newName} (server-managed).`);
     try {
+        const recordId = newName.split(' - ')[0]?.trim() || newName;
         const fn = httpsCallable(functions, 'syncEmployeeToGoogleDriveServer');
-        await fn({ recordId: newName, oldName });
+        await fn({ recordId, targetType: 'employee' });
     } catch (e) {
         log.warn('[DRIVE_SERVICE] renameEmployeeFolder server sync warning:', e);
     }
@@ -42,7 +43,8 @@ export const approveEmployeeFolder = async (oldFolderName: string, newFolderName
     log.log(`[DRIVE_SERVICE] Approve folder: ${oldFolderName} -> ${newFolderName}`);
     if (newFolderName) {
         try {
-            await syncEmployeeToGoogleDrive(newFolderName, 'employee');
+            const recordId = newFolderName.split(' - ')[0]?.trim() || newFolderName;
+            await syncEmployeeToGoogleDrive(recordId, 'employee');
         } catch (e) {
             log.warn('[DRIVE_SERVICE] approveEmployeeFolder sync warning:', e);
         }

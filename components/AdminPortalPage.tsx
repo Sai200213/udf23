@@ -297,7 +297,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
       setActiveTimelineEmployeeId(props.timelineEmployeeId);
       try {
         sessionStorage.setItem('activeTimelineEmployeeId', props.timelineEmployeeId);
-      } catch {}
+      } catch { }
     }
   }, [props.timelineEmployeeId]);
 
@@ -314,7 +314,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
       sessionStorage.removeItem('activeTimelineEmployeeId');
       sessionStorage.removeItem('adminTimelineSearchQuery');
       sessionStorage.removeItem('activeStaffProfileId');
-    } catch {}
+    } catch { }
     setActiveTimelineEmployeeId(null);
     onLogout();
   };
@@ -438,7 +438,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
         { id: AppView.ADMIN_PORTAL_WORKFLOW_CONFIG, view: AppView.ADMIN_PORTAL_WORKFLOW_CONFIG, label: 'Approval Workflows', icon: <GitBranch size={18} />, visible: hasPermission(Permission.MANAGE_WORKFLOWS) },
         { id: AppView.ADMIN_AUDIT_LOGS, view: AppView.ADMIN_AUDIT_LOGS, label: 'System Audit Logs', icon: <FileClock size={18} />, visible: hasPermission(Permission.VIEW_AUDIT_LOGS) },
         { id: AppView.ADMIN_LEGACY_SYSTEMS, view: AppView.ADMIN_LEGACY_SYSTEMS, label: 'Legacy Systems', icon: <Archive size={18} />, visible: hasPermission(Permission.MANAGE_SYSTEM) },
-        { id: AppView.ADMIN_PORTAL_RECYCLE_BIN, view: AppView.ADMIN_PORTAL_RECYCLE_BIN, label: 'Recycle Bin & Undo', icon: <Trash2 size={18} />, visible: isSuperAdmin },
+        { id: AppView.ADMIN_PORTAL_RECYCLE_BIN, view: AppView.ADMIN_PORTAL_RECYCLE_BIN, label: 'Recycle Bin & Undo', icon: <Trash2 size={18} />, visible: isSuperAdmin || hasPermission(Permission.EMPLOYEES_TAB_RECYCLE_BIN) },
       ]
     }
   ], [userRole, isSuperAdmin]);
@@ -508,6 +508,8 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
           onDelete={onDeleteSubmission}
           onSoftDelete={onSoftDeleteEmployee} // Fixed: Added missing soft delete prop
           onRestore={onRestoreEmployee}
+          onUpdateId={onUpdateSubmissionId}
+          onSyncDrive={onSyncDrive as any}
           formSections={sections}
           onRelieve={onRelieveEmployee}
           onRejoin={onRejoinEmployee}
@@ -522,7 +524,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
             setActiveTimelineEmployeeId(empId);
             try {
               sessionStorage.setItem('activeTimelineEmployeeId', empId);
-            } catch {}
+            } catch { }
             if (onViewTimeline) onViewTimeline(empId);
             navigateTo(AppView.ADMIN_PORTAL_EMPLOYEE_TIMELINE);
           }}
@@ -534,7 +536,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
         />;
       case AppView.ADMIN_PORTAL_WEBSITE_MANAGER:
         if (!hasPermission(Permission.MANAGE_SYSTEM)) return accessDenied;
-        return <AdminWebsiteManager isSuperAdmin={isSuperAdmin} userRole={userRole} />;
+        return <AdminWebsiteManager isSuperAdmin={isSuperAdmin} userRole={userRole} allowedSiteIds={allowedSiteIds} />;
       case AppView.ADMIN_PORTAL_TIMELINE_SEARCH:
         if (!isSuperAdmin && !hasPermission(Permission.EMPLOYEES_VIEW) && !hasPermission(Permission.EMPLOYEES_VIEW_TIMELINE)) return <div className="p-8 text-center text-red-500 font-semibold">Access Denied.</div>;
         return (
@@ -544,7 +546,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
               setActiveTimelineEmployeeId(empId);
               try {
                 sessionStorage.setItem('activeTimelineEmployeeId', empId);
-              } catch {}
+              } catch { }
               if (onViewTimeline) onViewTimeline(empId);
               navigateTo(AppView.ADMIN_PORTAL_EMPLOYEE_TIMELINE);
             }}
@@ -644,6 +646,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
           </>
         );
       case AppView.ADMIN_PORTAL_SUBMISSION_REVIEW:
+        if (!canSeeModule(Permission.MANAGE_SUBMISSIONS, Permission.VIEW_SUBMISSIONS, Permission.SUBMISSIONS_VIEW, Permission.SUBMISSIONS_APPROVE)) return accessDenied;
         return <AdminReviewSubmissionsPage
           submittedForms={submittedForms}
           onApprove={onApproveSubmission}
@@ -663,6 +666,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
           staffUsers={staffUsers}
         />;
       case AppView.ADMIN_PORTAL_LEAVE_MANAGEMENT:
+        if (!canSeeModule(Permission.MANAGE_LEAVES, Permission.VIEW_LEAVES, Permission.LEAVES_VIEW, Permission.LEAVES_APPROVE)) return accessDenied;
         return <AdminLeaveManagementPage
           leaveRequests={leaveRequests}
           onAction={onLeaveAction}
@@ -679,6 +683,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
           allowedSiteIds={allowedSiteIds}
         />;
       case AppView.ADMIN_PORTAL_ACCOUNT_UPDATE_MANAGEMENT:
+        if (!canSeeModule(Permission.MANAGE_ACCOUNT_UPDATES, Permission.VIEW_ACCOUNT_UPDATES, Permission.ACCOUNT_UPDATES_VIEW, Permission.ACCOUNT_UPDATES_APPROVE)) return accessDenied;
         return <AdminAccountUpdateManagementPage
           accountUpdateRequests={accountUpdateRequests}
           onAction={onAccountUpdateAction}
@@ -692,6 +697,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
           allowedSiteIds={allowedSiteIds}
         />;
       case AppView.ADMIN_PORTAL_RESIGNATION_MANAGEMENT:
+        if (!canSeeModule(Permission.MANAGE_RESIGNATIONS, Permission.VIEW_RESIGNATIONS, Permission.RESIGNATIONS_VIEW, Permission.RESIGNATIONS_APPROVE)) return accessDenied;
         return <AdminResignationManagementPage
           resignationRequests={resignationRequests}
           onAction={onResignationAction}
@@ -705,6 +711,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
           allowedSiteIds={allowedSiteIds}
         />;
       case AppView.ADMIN_PORTAL_DISCIPLINARY_MANAGEMENT:
+        if (!canSeeModule(Permission.MANAGE_DISCIPLINE, Permission.VIEW_DISCIPLINE, Permission.DISCIPLINE_VIEW, Permission.DISCIPLINE_MANAGE)) return accessDenied;
         return <AdminDisciplinaryPage
           disciplinaryActions={disciplinaryActions}
           onAddDiscipline={onAddDiscipline}
@@ -717,7 +724,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
           portalConfig={portalConfig}
           allowedSiteIds={allowedSiteIds}
         />;
-       case AppView.ADMIN_PORTAL_STAFF_MANAGEMENT:
+      case AppView.ADMIN_PORTAL_STAFF_MANAGEMENT:
         if (!hasPermission(Permission.MANAGE_STAFF)) return accessDenied;
         return <AdminStaffManagementPage staffUsers={staffUsers} setStaffUsers={setStaffUsers} roles={roles} sites={sites} setSites={setSites} loggedInUserId={authUser?.id || ''} onNotify={addToast} logAction={logAction} formSections={sections} />;
       case AppView.ADMIN_PORTAL_ROLE_MANAGEMENT:
@@ -763,7 +770,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
         return <AdminVacancyManager userRole={userRole} isSuperAdmin={isSuperAdmin} navigateTo={navigateTo} />;
 
       case AppView.ADMIN_PORTAL_INVITES:
-        if (!canSeeModule(Permission.INVITES_MANAGE, Permission.INVITES_VIEW, Permission.INVITES_VIEW_ALL)) return accessDenied;
+        if (!canSeeModule(Permission.INVITES_MANAGE, Permission.INVITES_VIEW, Permission.INVITES_VIEW_ALL, Permission.INVITES_CREATE)) return accessDenied;
         return (
           <AdminInvitesPage
             authUser={authUser}
@@ -778,19 +785,19 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
 
       case AppView.ADMIN_PORTAL_SITE_MANAGEMENT:
         if (!canSeeModule(Permission.SITES_MANAGE, Permission.SITES_VIEW)) return accessDenied;
-        return <AdminSiteManagementPage 
-          sites={sites} 
+        return <AdminSiteManagementPage
+          sites={sites}
           allowedSiteIds={allowedSiteIds}
-          setSites={setSites} 
-          submittedForms={submittedForms} 
-          staffUsers={staffUsers} 
-          roles={roles} 
-          onNotify={addToast} 
-          userRole={userRole} 
-          isSuperAdmin={isSuperAdmin} 
+          setSites={setSites}
+          submittedForms={submittedForms}
+          staffUsers={staffUsers}
+          roles={roles}
+          onNotify={addToast}
+          userRole={userRole}
+          isSuperAdmin={isSuperAdmin}
           portalConfig={portalConfig}
           setPortalConfig={setPortalConfig}
-          logAction={logAction} 
+          logAction={logAction}
         />;
       case AppView.ADMIN_PORTAL_DRAFTS:
         if (!hasPermission(Permission.SUBMISSIONS_VIEW_DRAFTS)) return <div className="p-8 text-center text-red-500 font-semibold">Access Denied.</div>;
@@ -804,6 +811,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
             userRole={userRole}
             authUser={authUser}
             onNotify={addToast}
+            allowedSiteIds={allowedSiteIds}
             logAction={logAction}
           />
         );
@@ -820,7 +828,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
                 setActiveTimelineEmployeeId(empId);
                 try {
                   sessionStorage.setItem('activeTimelineEmployeeId', empId);
-                } catch {}
+                } catch { }
                 if (onViewTimeline) onViewTimeline(empId);
                 navigateTo(AppView.ADMIN_PORTAL_EMPLOYEE_TIMELINE);
               }}
@@ -834,7 +842,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
               onClose={() => {
                 try {
                   sessionStorage.removeItem('activeTimelineEmployeeId');
-                } catch {}
+                } catch { }
                 setActiveTimelineEmployeeId(null);
                 if (isSuperAdmin || hasPermission(Permission.EMPLOYEES_VIEW_TIMELINE)) {
                   navigateTo(AppView.ADMIN_PORTAL_TIMELINE_SEARCH);
@@ -878,7 +886,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
           />
         );
       case AppView.ADMIN_PORTAL_RECYCLE_BIN:
-        if (!isSuperAdmin) return accessDenied;
+        if (!isSuperAdmin && !hasPermission(Permission.EMPLOYEES_TAB_RECYCLE_BIN)) return accessDenied;
         return (
           <AdminRecycleBinPage
             onNotify={addToast}
@@ -924,7 +932,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
 
       <aside
         className={`bg-slate-900 text-white transition-all duration-300 flex flex-col shadow-xl z-50
-          ${native 
+          ${native
             ? `fixed inset-y-0 left-0 w-[280px] ${isDrawerOpen ? 'translate-x-0' : '-translate-x-full'}`
             : `lg:relative fixed inset-y-0 left-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} ${isSidebarExpanded ? 'w-72' : 'lg:w-20 w-72'}`
           }`}
@@ -1104,7 +1112,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
         {native && (
           <div className="native-top-bar">
             <div className="top-bar-left">
-              <button 
+              <button
                 onClick={() => setIsDrawerOpen(true)}
                 className="p-2 -ml-2 text-gray-700 active:opacity-60"
               >
@@ -1234,8 +1242,8 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
                 ) : (
                   notifications.map(notif => (
                     <div key={notif.id} className="p-4 border-b active:bg-gray-50" onClick={() => { handleNotificationClick(notif); setIsNotificationOpen(false); }}>
-                       <p className={`text-sm ${!notif.read ? 'font-semibold text-gray-900' : 'text-gray-600'}`}>{notif.message}</p>
-                       <p className="text-xs text-gray-400 mt-1">{new Date(notif.timestamp).toLocaleString()}</p>
+                      <p className={`text-sm ${!notif.read ? 'font-semibold text-gray-900' : 'text-gray-600'}`}>{notif.message}</p>
+                      <p className="text-xs text-gray-400 mt-1">{new Date(notif.timestamp).toLocaleString()}</p>
                     </div>
                   ))
                 )}

@@ -36,6 +36,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
     const hasPermission = (permission: Permission) => {
         if (isSuperAdmin) return true;
+        if (userRole?.isDisabled === true) return false;
         if (authUser?.permissionOverrides?.[permission] === true) return true;
         if (authUser?.permissionOverrides?.[permission] === false) return false;
         return userRole?.permissions.includes(permission) || false;

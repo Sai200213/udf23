@@ -111,18 +111,4 @@ export const subscribeToAuditLogs = (callback: (logs: AuditLogEntry[]) => void, 
     });
 };
 
-// ─── Privileged SuperAdmin-only functions ─────────────────────────────────────
-// These are NOT exported from the main index and are only used internally
-// by the hidden audit management panel. Firestore rules enforce SuperAdmin-only access.
-
-export const _deleteAuditLog = async (logId: string): Promise<void> => {
-    const docRef = doc(db, AUDIT_LOGS_COLLECTION, logId);
-    await deleteDoc(docRef);
-};
-
-export const _updateAuditLogDetails = async (logId: string, newDetails: string): Promise<void> => {
-    const docRef = doc(db, AUDIT_LOGS_COLLECTION, logId);
-    await updateDoc(docRef, { details: newDetails, _edited: true });
-};
-
 

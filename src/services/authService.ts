@@ -425,15 +425,17 @@ export const logoutUser = async () => {
 export const getCurrentUser = (timeoutMs: number = 5000): Promise<User | null> => {
     return new Promise((resolve) => {
         let resolved = false;
+        let unsubscribe: (() => void) | undefined;
         const timeout = setTimeout(() => {
             if (!resolved) {
                 resolved = true;
+                if (unsubscribe) unsubscribe();
                 resolve(null);
             }
         }, timeoutMs);
 
-        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-            if (resolved) { unsubscribe(); return; }
+        unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+            if (resolved) { if (unsubscribe) unsubscribe(); return; }
             if (firebaseUser) {
                 try {
                     // ABSOLUTE ISOLATION: Use portalType hint to scope profile extraction

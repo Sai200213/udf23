@@ -212,23 +212,25 @@ const SecuritySettingsModal: React.FC<SecuritySettingsModalProps> = ({
                                 </div>
 
                                 {/* Optional: Link Google — actual functional button */}
-                                <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <LinkIcon size={14} className="text-blue-600" />
-                                            <span className="text-xs text-blue-700 font-medium">Enable one-click login with Google (optional)</span>
+                                {!isForcedMode && (
+                                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <LinkIcon size={14} className="text-blue-600" />
+                                                <span className="text-xs text-blue-700 font-medium">Enable one-click login with Google (optional)</span>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={handleLinkGoogle}
+                                                disabled={status === 'loading' || !currentPassword}
+                                                className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
+                                            >
+                                                <LinkIcon size={12} />
+                                                Link Google
+                                            </button>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={handleLinkGoogle}
-                                            disabled={status === 'loading' || !currentPassword}
-                                            className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
-                                        >
-                                            <LinkIcon size={12} />
-                                            Link Google
-                                        </button>
                                     </div>
-                                </div>
+                                )}
 
                                 {status === 'error' && (
                                     <div className="bg-red-50 border border-red-100 rounded-lg p-3 flex items-center gap-2 text-sm text-red-700">

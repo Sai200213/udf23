@@ -400,8 +400,12 @@ const DataCorrectionPage: React.FC<DataCorrectionPageProps> = ({ sections }) => 
     if (field.type === FieldType.CHECKBOX) {
       isEmpty = !value || (Array.isArray(value) && value.length === 0);
     } else if (field.type === FieldType.FILE_UPLOAD) {
-      const pathVal = typeof value === 'object' && value !== null ? (value.storagePath || value.url || value.fileUrl || '') : value;
-      isEmpty = !pathVal || (typeof pathVal === 'string' && pathVal.trim() === '');
+      if (value instanceof File) {
+        isEmpty = value.size === 0;
+      } else {
+        const pathVal = typeof value === 'object' && value !== null ? (value.storagePath || value.url || value.fileUrl || '') : value;
+        isEmpty = !pathVal || (typeof pathVal === 'string' && pathVal.trim() === '');
+      }
     } else {
       isEmpty = value === undefined || value === null || String(value).trim() === '';
     }
@@ -735,6 +739,7 @@ const DataCorrectionPage: React.FC<DataCorrectionPageProps> = ({ sections }) => 
     const hasAnyChange = requestDoc.requestedFields.some(fieldId => {
       const orig = originalFields[fieldId] ?? '';
       const curr = formData[fieldId] ?? '';
+      if (curr instanceof File) return true;
       return JSON.stringify(orig) !== JSON.stringify(curr);
     });
 

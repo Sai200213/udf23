@@ -49,8 +49,8 @@ const AdminDisciplinaryPage: React.FC<AdminDisciplinaryPageProps> = ({
     return Boolean(userRole?.permissions?.includes(p));
   };
 
-  const hasManagePerm = isSuperAdmin || 
-    hasPermission(Permission.DISCIPLINE_MANAGE) || 
+  const hasManagePerm = isSuperAdmin ||
+    hasPermission(Permission.DISCIPLINE_MANAGE) ||
     hasPermission(Permission.MANAGE_DISCIPLINE);
 
   // Load employee lookup for site filtering and dropdown
@@ -120,8 +120,8 @@ const AdminDisciplinaryPage: React.FC<AdminDisciplinaryPageProps> = ({
   const canDeleteDiscipline = isSuperAdmin || hasPermission(Permission.DISCIPLINE_DELETE);
 
   const filteredActions = disciplinaryActions.filter(action => {
-    if (!hasDisciplineScopeAll && allowedSiteIds && allowedSiteIds.length > 0) {
-      if (!action.siteId || !allowedSiteIds.includes(action.siteId)) return false;
+    if (!hasDisciplineScopeAll) {
+      if (!allowedSiteIds || allowedSiteIds.length === 0 || !action.siteId || !allowedSiteIds.includes(action.siteId)) return false;
     }
     const matchesSearch = action.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       action.employeeId.toLowerCase().includes(searchTerm.toLowerCase());

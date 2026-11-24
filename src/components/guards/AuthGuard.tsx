@@ -28,10 +28,13 @@ const AuthGuard: React.FC<AuthGuardProps> = ({ children, allowedUserTypes }) => 
 
     if (isPublicOrGuest) {
         const isPathAdmin = location.pathname.startsWith('/admin');
-        const isPathEmployee = location.pathname.startsWith('/employee');
-        const redirectPath = isPathAdmin ? '/admin/login' : (isPathEmployee ? '/employee/login' : '/login');
-        console.warn(`AuthGuard: Guest or unauthenticated user on protected path ${location.pathname}. Redirecting to ${redirectPath}`);
-        return <Navigate to={redirectPath} state={{ from: location }} replace />;
+        const baseLogin = isPathAdmin ? '/admin/login' : '/login';
+        const currentPath = location.pathname + location.search;
+        const loginUrl = currentPath && currentPath !== '/' && currentPath !== '/login' && currentPath !== '/employee/login'
+            ? `${baseLogin}?redirect=${encodeURIComponent(currentPath)}`
+            : baseLogin;
+        console.warn(`AuthGuard: Guest or unauthenticated user on protected path ${location.pathname}. Redirecting to ${loginUrl}`);
+        return <Navigate to={loginUrl} state={{ from: location }} replace />;
     }
 
     if (allowedUserTypes && !allowedUserTypes.includes(user.type as UserType)) {

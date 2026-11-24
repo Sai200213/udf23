@@ -53,8 +53,8 @@ export default defineConfig(({ mode }) => {
       {
         name: 'generate-version-json',
         closeBundle() {
-          const target = env.VITE_APP_TARGET || process.env.VITE_APP_TARGET || 'public';
-          const outDir = target === 'admin' ? 'dist-admin' : target === 'employee' ? 'dist-employee' : 'dist-public';
+          const target = env.VITE_APP_TARGET || process.env.VITE_APP_TARGET;
+          const outDir = target === 'admin' ? 'dist-admin' : target === 'employee' ? 'dist-employee' : target === 'public' ? 'dist-public' : 'dist';
           const versionPath = path.resolve(__dirname, outDir, 'version.json');
           const versionData = {
             version: APP_VERSION,
@@ -127,7 +127,8 @@ export default defineConfig(({ mode }) => {
             /^\/llms\.txt$/,
             /^\/google8aaac7081881f131\.html$/,
             /^\/UDF_Brochure\.pdf$/,
-            /^\/__\/.*$/
+            /^\/__\/.*$/,
+            /^\/api\/.*$/
           ],
         }
       })

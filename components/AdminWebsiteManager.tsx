@@ -16,7 +16,7 @@ const getFormattedImageUrl = (url?: string) => {
     return `/${trimmed}`;
 };
 
-const AdminWebsiteManager: React.FC<{ isSuperAdmin: boolean; userRole?: any }> = ({ isSuperAdmin, userRole }) => {
+const AdminWebsiteManager: React.FC<{ isSuperAdmin: boolean; userRole?: any; allowedSiteIds?: string[] }> = ({ isSuperAdmin, userRole, allowedSiteIds }) => {
     const [activeTab, setActiveTab] = useState<'blogs' | 'about_services' | 'contact_careers' | 'attendance' | 'quizzes' | 'rewards_rules' | 'usage_billing'>('blogs');
     const [webConfig, setWebConfig] = useState<WebsiteServiceData | null>(null);
 
@@ -137,7 +137,11 @@ const AdminWebsiteManager: React.FC<{ isSuperAdmin: boolean; userRole?: any }> =
 
     const loadAttendanceRecords = async () => {
         try {
-            const snap = await getDocs(query(collection(db, 'attendance'), orderBy('date', 'desc'), limit(200)));
+            const siteIds = (!isSuperAdmin && allowedSiteIds && allowedSiteIds.length > 0) ? allowedSiteIds.slice(0, 30) : null;
+            const q = siteIds
+                ? query(collection(db, 'attendance'), where('siteId', 'in', siteIds), orderBy('date', 'desc'), limit(200))
+                : query(collection(db, 'attendance'), orderBy('date', 'desc'), limit(200));
+            const snap = await getDocs(q);
             const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setAttendanceRecords(list);
         } catch (err) {

@@ -10,6 +10,7 @@ interface AdminCorrectionRequestsPageProps {
   userRole?: Role;
   authUser?: User | null;
   onNotify: (message: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
+  allowedSiteIds?: string[];
   logAction?: (
     actionType: 'CREATE' | 'UPDATE' | 'DELETE' | 'STATUS_CHANGE' | 'APPROVAL' | 'REJECTION' | 'LOGIN' | 'LOGOUT' | 'SUBMIT' | 'EXPORT',
     targetModule: 'SITES' | 'STAFF' | 'ROLES' | 'LEAVES' | 'EMPLOYEES' | 'SYSTEM' | 'AUTH' | 'SUBMISSION',
@@ -23,6 +24,7 @@ const AdminCorrectionRequestsPage: React.FC<AdminCorrectionRequestsPageProps> = 
   userRole,
   authUser,
   onNotify,
+  allowedSiteIds,
   logAction
 }) => {
   const [requests, setRequests] = useState<CorrectionRequest[]>([]);
@@ -60,13 +62,13 @@ const AdminCorrectionRequestsPage: React.FC<AdminCorrectionRequestsPageProps> = 
     return Boolean(userRole?.permissions?.includes(p));
   };
 
-  const canRevokeCorrection = isSuperAdmin || 
-    checkPerm(Permission.SUBMISSIONS_CREATE_CORRECTION_LINK) || 
-    checkPerm(Permission.EMPLOYEES_REQUEST_CORRECTION) || 
+  const canRevokeCorrection = isSuperAdmin ||
+    checkPerm(Permission.SUBMISSIONS_CREATE_CORRECTION_LINK) ||
+    checkPerm(Permission.EMPLOYEES_REQUEST_CORRECTION) ||
     checkPerm(Permission.SUBMISSIONS_APPROVE);
 
-  const canDeleteCorrection = isSuperAdmin || 
-    checkPerm(Permission.DELETE_SUBMISSION) || 
+  const canDeleteCorrection = isSuperAdmin ||
+    checkPerm(Permission.DELETE_SUBMISSION) ||
     checkPerm(Permission.DELETE_EMPLOYEE);
 
   // Helper to translate field UUIDs to human-readable labels
@@ -140,10 +142,22 @@ const AdminCorrectionRequestsPage: React.FC<AdminCorrectionRequestsPageProps> = 
     }
   };
 
+  const hasGlobalScope = isSuperAdmin ||
+    checkPerm(Permission.EMPLOYEES_VIEW_SCOPE_ALL) ||
+    checkPerm(Permission.SUBMISSIONS_VIEW_SCOPE_ALL) ||
+    checkPerm(Permission.MANAGE_SITES);
+
   // Filtered Requests
   const filteredRequests = useMemo(() => {
     const now = new Date();
     return requests.filter(req => {
+      // Site scoping for site-restricted staff
+      if (!hasGlobalScope) {
+        if (!allowedSiteIds || allowedSiteIds.length === 0) return false;
+        const reqSiteId = (req as any).siteId || (req as any).currentSiteId;
+        if (reqSiteId && !allowedSiteIds.includes(reqSiteId)) return false;
+      }
+
       const isExpired = req.status === 'expired' || new Date(req.expiresAt) < now;
       const computedStatus = req.status === 'pending' && isExpired ? 'expired' : req.status;
 
@@ -162,12 +176,12 @@ const AdminCorrectionRequestsPage: React.FC<AdminCorrectionRequestsPageProps> = 
 
       return matchesSearch && matchesStatus && matchesType;
     });
-  }, [requests, searchTerm, filterStatus, filterType]);
+  }, [requests, searchTerm, filterStatus, filterType, hasGlobalScope, allowedSiteIds]);
 
   const getStatusBadge = (status: 'pending' | 'completed' | 'expired', expiresAt: string) => {
     const now = new Date();
     const isExpired = status === 'expired' || new Date(expiresAt) < now;
-    
+
     if (status === 'completed') {
       return (
         <span className="flex items-center w-fit px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-green-100 text-green-700 border border-green-200">
@@ -175,7 +189,7 @@ const AdminCorrectionRequestsPage: React.FC<AdminCorrectionRequestsPageProps> = 
         </span>
       );
     }
-    
+
     if (isExpired) {
       return (
         <span className="flex items-center w-fit px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-red-100 text-red-700 border border-red-200">

@@ -71,13 +71,24 @@ function verifyViaApi(idToken) {
     if (!uid) return { isValid: false };
     
     var isSuperAdmin = false;
+    var isStaff = false;
     try {
-      var firestoreUrl = "https://firestore.googleapis.com/v1/projects/" + PROJECT_ID + "/databases/(default)/documents/users/" + uid;
+      // 🛡️ Check staff_accounts collection first (UDF-AUD-13, UDF-AUD-197)
+      var firestoreUrl = "https://firestore.googleapis.com/v1/projects/" + PROJECT_ID + "/databases/(default)/documents/staff_accounts/" + uid;
       var firestoreResponse = UrlFetchApp.fetch(firestoreUrl, {
         method: "get",
         headers: { "Authorization": "Bearer " + idToken },
         muteHttpExceptions: true
       });
+      // Fallback to legacy users collection if not found in staff_accounts
+      if (firestoreResponse.getResponseCode() !== 200) {
+        firestoreUrl = "https://firestore.googleapis.com/v1/projects/" + PROJECT_ID + "/databases/(default)/documents/users/" + uid;
+        firestoreResponse = UrlFetchApp.fetch(firestoreUrl, {
+          method: "get",
+          headers: { "Authorization": "Bearer " + idToken },
+          muteHttpExceptions: true
+        });
+      }
       if (firestoreResponse.getResponseCode() === 200) {
         var userDoc = JSON.parse(firestoreResponse.getContentText());
         var isDisabled = userDoc.fields && userDoc.fields.isDisabled && userDoc.fields.isDisabled.booleanValue === true;
@@ -86,11 +97,13 @@ function verifyViaApi(idToken) {
           return { isValid: false, error: "ACCOUNT_DISABLED" };
         }
         var roleId = userDoc.fields && userDoc.fields.roleId && userDoc.fields.roleId.stringValue;
-        isSuperAdmin = (!isDisabled && roleId === 'role-super-admin');
+        var userType = userDoc.fields && userDoc.fields.type && userDoc.fields.type.stringValue;
+        isSuperAdmin = (!isDisabled && (roleId === 'role-super-admin' || roleId === 'super-admin' || userType === 'SuperAdmin'));
+        isStaff = !isDisabled && (isSuperAdmin || userType === 'Admin' || userType === 'Staff');
       }
     } catch (err) {}
     
-    return { isValid: true, uid: uid, isSuperAdmin: isSuperAdmin };
+    return { isValid: true, uid: uid, isSuperAdmin: isSuperAdmin, isStaff: isStaff };
   } catch(e) { return { isValid: false }; }
 }
 
@@ -107,7 +120,7 @@ function doPost(e) {
       return reply({ success: false, error: "Unauthorized: Invalid or missing Firebase Authentication Token" });
     }
     
-    // 🛡️ SECURITY: Verify SuperAdmin status for administrative directory actions
+    // 🛡️ SECURITY: Verify SuperAdmin / Staff status for administrative directory actions (UDF-AUD-421, UDF-AUD-13, UDF-AUD-197)
     var adminActions = [
       'copy_folder_contents',
       'copy_specific_subfolders',
@@ -119,17 +132,24 @@ function doPost(e) {
       'restore_employee',
       'permanent_delete_employee',
       'block_employee',
-      'unblock_employee'
+      'unblock_employee',
+      'relieve_employee',
+      'rejoin_employee'
     ];
     
     var isAdministrative = adminActions.indexOf(data.action) !== -1;
-    if (isAdministrative && !authInfo.isSuperAdmin) {
-      return reply({ success: false, error: "Forbidden: Only SuperAdmins can execute folder management actions" });
+    if (isAdministrative && !authInfo.isSuperAdmin && !authInfo.isStaff) {
+      return reply({ success: false, error: "Forbidden: Only authorized HR Administrators can execute folder management actions" });
     }
     
     // 📁 ACTIONS
-    // 👉 Updated to pass email to submitToForm
-    if (data.action === 'submit_to_form') return submitToForm(data.fields, data.email);
+    // 👉 submit_to_form restricted to SuperAdmin or verified Staff (UDF-AUD-13)
+    if (data.action === 'submit_to_form') {
+      if (!authInfo.isSuperAdmin && !authInfo.isStaff) {
+        return reply({ success: false, error: "Forbidden: Staff authorization required for form submission" });
+      }
+      return submitToForm(data.fields, data.email);
+    }
     if (data.action === 'copy_folder_contents') return handleCopyFolder(data.sourceFolderName, data.targetFolderName);
     if (data.action === 'copy_specific_subfolders') return handleCopySpecificSubfolders(data.sourceFolderName, data.targetFolderName, data.foldersToCopy);
     if (data.action === 'create_employee_folder') return handleCreateEmployeeFolder(data.employeeName, data.uniqueId);
@@ -139,7 +159,11 @@ function doPost(e) {
     
     // --- DELETION & BLOCK ACTIONS ---
     if (data.action === 'delete_employee') return moveFolderAction(data.employeeName, data.uniqueId, FOLDERS.RECYCLE_BIN, data.folderName);
-    if (data.action === 'restore_employee') return moveFolderAction(data.employeeName, data.uniqueId, FOLDERS.PENDING, data.folderName);
+    if (data.action === 'restore_employee') {
+      var isAlreadyActive = data.targetFolder === FOLDERS.ACTIVE || (data.uniqueId && (/^HY\d+/i.test(data.uniqueId) || data.uniqueId.indexOf('ACTIVE') !== -1));
+      var restoreTarget = isAlreadyActive ? FOLDERS.ACTIVE : FOLDERS.PENDING;
+      return moveFolderAction(data.employeeName, data.uniqueId, restoreTarget, data.folderName);
+    }
     if (data.action === 'permanent_delete_employee') return permanentDeleteAction(data.employeeName, data.uniqueId, data.folderName);
     if (data.action === 'block_employee') return moveFolderAction(data.employeeName, data.uniqueId, FOLDERS.BLOCKED, data.folderName);
     if (data.action === 'relieve_employee') return moveFolderAction(data.employeeName, data.uniqueId, FOLDERS.RELIEVED, data.folderName);
@@ -320,7 +344,8 @@ function submitToForm(fields, email) {
         var matchedChoice = choices.find(function(c) { return c.toLowerCase() === val.toLowerCase(); }) || val;
         response.withItemResponse(item.asListItem().createResponse(matchedChoice));
       } else if (type === FormApp.ItemType.CHECKBOX) {
-        response.withItemResponse(item.asCheckboxItem().createResponse([field.value]));
+        var chkVal = Array.isArray(field.value) ? field.value : [field.value];
+        response.withItemResponse(item.asCheckboxItem().createResponse(chkVal));
       } else if (type === FormApp.ItemType.DATE) {
         response.withItemResponse(item.asDateItem().createResponse(new Date(field.value)));
       }

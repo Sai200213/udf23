@@ -106,8 +106,9 @@ export const markNotificationRead = async (notificationId: string) => {
     await updateDoc(ref, { read: true });
 };
 
-export const markAllRead = async (userId: string, currentNotifs: Notification[]) => {
-    const unread = currentNotifs.filter(n => !n.read && n.targetUserId === userId).slice(0, 450);
+export const markAllRead = async (userId: string, currentNotifs: Notification[], portalId?: string) => {
+    const ownedTargets = new Set([userId, portalId].filter(Boolean));
+    const unread = currentNotifs.filter(n => !n.read && ownedTargets.has(n.targetUserId)).slice(0, 450);
 
     if (unread.length === 0) return;
 

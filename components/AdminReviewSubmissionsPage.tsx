@@ -861,7 +861,7 @@ const AdminReviewSubmissionsPage: React.FC<AdminReviewSubmissionsPageProps> = ({
               </div>
             </div>
             <div class="photo-box">
-              ${photoUrl ? `<img src="${photoUrl}" alt="Passport Photo" />` : 'PASTE PASSPORT PHOTO HERE'}
+              ${photoUrl ? `<img src="${esc(photoUrl)}" alt="Passport Photo" />` : 'PASTE PASSPORT PHOTO HERE'}
             </div>
           </div>
 
@@ -2253,7 +2253,7 @@ const AdminReviewSubmissionsPage: React.FC<AdminReviewSubmissionsPageProps> = ({
               )}
 
               {(() => {
-                const canAssignId = (!userRole?.isDisabled && userRole?.permissions.includes(Permission.SUBMISSIONS_ASSIGN_EMPLOYEE_ID)) || isSuperAdmin;
+                const canAssignId = effectiveIsSuperAdmin || hasPermission(Permission.SUBMISSIONS_ASSIGN_EMPLOYEE_ID);
                 const showIdInput = isFinalStep(approvalTargetSubmission) || isBypassMode || canAssignId;
                 if (!showIdInput) return null;
 

@@ -598,7 +598,7 @@ const AdminSiteManagementPage: React.FC<AdminSiteManagementPageProps> = ({ sites
             sites
               // VISIBILITY FILTER: Only Super Admin sees 'Inactive' sites
               .filter(site => isSuperAdmin || site.status === 'Active')
-              .filter(site => isSuperAdmin || !allowedSiteIds || allowedSiteIds.includes(site.id))
+              .filter(site => isSuperAdmin || hasManagePerm || (Array.isArray(allowedSiteIds) && allowedSiteIds.includes(site.id)))
               .map(site => {
                 const count = getSiteHeadcount(site.name, site.id);
                 const supervisor = getSupervisorDetails(site.supervisorId, site);
@@ -745,6 +745,7 @@ const AdminSiteManagementPage: React.FC<AdminSiteManagementPageProps> = ({ sites
               <tbody className="divide-y divide-gray-100">
                 {sites
                   .filter(site => isSuperAdmin || site.status === 'Active') // Filter inactive from table
+                  .filter(site => isSuperAdmin || hasManagePerm || (Array.isArray(allowedSiteIds) && allowedSiteIds.includes(site.id)))
                   .map(site => {
                     const count = getSiteHeadcount(site.name, site.id);
                     const supervisor = getSupervisorDetails(site.supervisorId, site);

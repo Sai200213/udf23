@@ -25,9 +25,13 @@ const BGV_COLLECTION = 'bgv_records';
  * Subscribe in real time to all BGV records.
  */
 export const subscribeToBgvRecords = (callback: (records: BgvRecord[]) => void, allowedSiteIds?: string[]) => {
-  let q = query(collection(db, BGV_COLLECTION), orderBy('initiatedDate', 'desc'), limit(500));
+  if (allowedSiteIds !== undefined && allowedSiteIds.length === 0) {
+    callback([]);
+    return () => {};
+  }
+  let q = query(collection(db, BGV_COLLECTION), orderBy('createdAt', 'desc'), limit(500));
   if (allowedSiteIds && allowedSiteIds.length > 0) {
-    q = query(collection(db, BGV_COLLECTION), where('siteId', 'in', allowedSiteIds.slice(0, 30)));
+    q = query(collection(db, BGV_COLLECTION), where('siteId', 'in', allowedSiteIds.slice(0, 30)), limit(500));
   }
   return onSnapshot(q, (snapshot) => {
     const records: BgvRecord[] = [];
@@ -159,7 +163,8 @@ export const syncBgvCandidates = async (
   }
 
   const activeEmployees = employeesList.filter(e => {
-    if (e.isActive === false || (e as any).isRelieved === true) return false;
+    const isRelieved = e.isActive === false || (e as any).isRelieved === true;
+    if (isRelieved && !existingMap.has(e.id) && !existingMap.has((e as any).employeeId)) return false;
 
     // Check if employee is assigned to a BGV site
     const currentSiteId = (e as any).currentSiteId || (e as any).siteId;

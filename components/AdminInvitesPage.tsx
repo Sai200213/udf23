@@ -178,6 +178,12 @@ export const AdminInvitesPage: React.FC<AdminInvitesPageProps> = ({
   const canViewInvites = hasPermission(Permission.INVITES_VIEW);
   const canEditInvite = isSuperAdmin || canManageSettings;
 
+  useEffect(() => {
+    if (activeTab === 'GENERATE' && !canCreateInvites) {
+      setActiveTab(canViewInvites ? 'TRACKER' : 'CANDIDATES');
+    }
+  }, [activeTab, canCreateInvites, canViewInvites]);
+
   // Active sites list
   const activeSites = useMemo(() => sites.filter(s => s.status === 'Active'), [sites]);
 

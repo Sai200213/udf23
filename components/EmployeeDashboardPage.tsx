@@ -218,6 +218,7 @@ const EmployeeDashboardPage: React.FC<EmployeeDashboardPageProps> = (props) => {
           allowedFieldIds={editableFieldIds}
           roles={roles}
           workflowConfigs={workflowConfigs}
+          formSections={formSections}
         />;
         break;
       case AppView.EMPLOYEE_RESIGNATION:

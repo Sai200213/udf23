@@ -261,9 +261,9 @@ export const AdminBgvManagementPage: React.FC<AdminBgvManagementPageProps> = ({
         const recVendorId = (record.vendorId || '').trim();
 
         const isMatch = (recVendorId && authId && recVendorId === authId) ||
-                        (recVendorName && authName && (recVendorName === authName || recVendorName.includes(authName))) ||
-                        (recVendorName && authEmail && (recVendorName === authEmail || recVendorName.includes(authEmail))) ||
-                        (recVendorName && authUsername && (recVendorName === authUsername || recVendorName.includes(authUsername)));
+                        (recVendorName && authName && recVendorName === authName) ||
+                        (recVendorName && authEmail && recVendorName === authEmail) ||
+                        (recVendorName && authUsername && recVendorName === authUsername);
         if (!isMatch) {
           return false;
         }
@@ -811,7 +811,7 @@ export const AdminBgvManagementPage: React.FC<AdminBgvManagementPageProps> = ({
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-9 h-9 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden border border-purple-200">
-                            {item.photoUrl ? (
+                            {item.photoUrl && !isFieldHiddenForRole("photo") ? (
                               <img
                                 src={photoBlobUrls[item.id] || item.photoUrl}
                                 alt={item.employeeName}
@@ -821,7 +821,7 @@ export const AdminBgvManagementPage: React.FC<AdminBgvManagementPageProps> = ({
                                 }}
                               />
                             ) : (
-                              item.employeeName.charAt(0).toUpperCase()
+                              (item.employeeName || 'E').charAt(0).toUpperCase()
                             )}
                           </div>
                           <div>

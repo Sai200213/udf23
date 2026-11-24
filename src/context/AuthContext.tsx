@@ -112,10 +112,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         let unsubStaff: (() => void) | null = null;
         let unsubUsers: (() => void) | null = null;
+        let cancelled = false;
         const listenForClaimUpdates = async () => {
             try {
                 const { db } = await import('../firebase/config');
                 const { doc, onSnapshot } = await import('firebase/firestore');
+                if (cancelled) return;
 
                 const handleProfileData = async (data: Record<string, any>) => {
                     // Check if account has been disabled or suspended (UDF-AUD-179)
@@ -186,6 +188,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         listenForClaimUpdates();
         return () => {
+            cancelled = true;
             if (unsubStaff) unsubStaff();
             if (unsubUsers) unsubUsers();
         };

@@ -76,7 +76,7 @@ function checkLookupRateLimit(identifier) {
 
 // Secure server-side password hashing using bcrypt (cost 12)
 exports.hashCandidatePasswordServer = secureOnCall(async (request) => {
-    if (!request.auth || (request.auth.token && request.auth.token.provider_id === 'anonymous')) {
+    if (!request.auth || (request.auth.token && (request.auth.token.firebase?.sign_in_provider === 'anonymous' || request.auth.token.provider_id === 'anonymous'))) {
         throw new functions.https.HttpsError('unauthenticated', 'Must be authenticated with a verified non-anonymous account');
     }
     const { password } = request.data || {};
@@ -97,7 +97,7 @@ exports.hashCandidatePasswordServer = secureOnCall(async (request) => {
 // Check global uniqueness across all identity collections
 exports.checkGlobalUniqueness = secureOnCall(async (request) => {
     // Only authenticated users can check uniqueness (prevents public scraping)
-    if (!request.auth || (request.auth.token && request.auth.token.provider_id === 'anonymous')) {
+    if (!request.auth || (request.auth.token && (request.auth.token.firebase?.sign_in_provider === 'anonymous' || request.auth.token.provider_id === 'anonymous'))) {
         throw new functions.https.HttpsError('unauthenticated', 'Verification rejected: Non-anonymous authentication required.');
     }
     if (!checkLookupRateLimit(request.auth.uid)) {
@@ -390,6 +390,7 @@ exports.deleteStaffUser = secureOnCall(async (request) => {
         await admin.firestore().collection('users').doc(uid).delete().catch(() => {});
         return { success: true, message: 'User deleted successfully' };
     } catch (error) {
+        if (error instanceof functions.https.HttpsError) throw error;
         console.error('Error deleting user:', error);
         throw new functions.https.HttpsError('internal', error.message || 'Internal server error');
     }
@@ -1163,6 +1164,11 @@ exports.changeEmployeePassword = secureOnCall(async (request) => {
             throw new functions.https.HttpsError('permission-denied', 'You do not have permission to change this password.');
         }
 
+        const isLocked = await checkAndIncrementFailedAttempts(db, `pwchange_${callerUid}`);
+        if (isLocked) {
+            throw new functions.https.HttpsError('resource-exhausted', 'Too many failed attempts. Try again in 1 hour.');
+        }
+
         // SECURITY: Use bcrypt verify. Also handle legacy SHA-256 hashes.
         let isVerified = false;
         if (empData.passwordHash) {
@@ -1172,7 +1178,6 @@ exports.changeEmployeePassword = secureOnCall(async (request) => {
         // All employees must use their hashed password or go through reset flow.
 
         if (!isVerified) {
-            await recordFailedAttempt(db, `pwchange_${callerUid}`).catch(() => {});
             throw new functions.https.HttpsError('permission-denied', 'Incorrect current password');
         }
         await clearFailedAttempts(db, `pwchange_${callerUid}`).catch(() => {});
@@ -1273,9 +1278,12 @@ exports.linkEmployeeGoogleAccount = secureOnCall(async (request) => {
         // Check if it belongs to another Employee
         const empChecks = await Promise.all([
             db.collection('employees').where('uid', '==', googleUid).get(),
+            db.collection('employees').where('linkedUid', '==', googleUid).get(),
+            db.collection('employees').where('googleUid', '==', googleUid).get(),
             db.collection('employees').where('linkedGoogleEmail', '==', normalizedGoogleEmail).get(),
             db.collection('onboarding_submissions').where('uid', '==', googleUid).get(),
             db.collection('onboarding_submissions').where('linkedUid', '==', googleUid).get(),
+            db.collection('onboarding_submissions').where('googleUid', '==', googleUid).get(),
             db.collection('onboarding_submissions').where('linkedGoogleEmail', '==', normalizedGoogleEmail).get()
         ]);
 
@@ -1334,7 +1342,7 @@ exports.linkEmployeeGoogleAccount = secureOnCall(async (request) => {
             linkedUid: googleUid,
             googleUid: googleUid,
             authProvider: 'google',
-            linkedGoogleEmail: email
+            linkedGoogleEmail: normalizedGoogleEmail
         };
 
         const batch = db.batch();
@@ -1487,13 +1495,22 @@ exports.unlinkEmployeeGoogleAccount = secureOnCall(async (request) => {
         // Clear failed attempts counter on successful verification
         await clearFailedAttempts(db, `unlink_${employeeId}`);
 
+        const prevUids = new Set();
+        if (!empSnap.empty) { const d = empSnap.docs[0].data(); if (d.uid) prevUids.add(d.uid); if (d.linkedUid && d.linkedUid !== 'none') prevUids.add(d.linkedUid); if (d.googleUid) prevUids.add(d.googleUid); }
+        if (!subSnap.empty) { const d = subSnap.docs[0].data(); if (d.uid) prevUids.add(d.uid); if (d.linkedUid && d.linkedUid !== 'none') prevUids.add(d.linkedUid); if (d.googleUid) prevUids.add(d.googleUid); }
+
         const updates = {
             linkedUid: 'none',
+            googleUid: admin.firestore.FieldValue.delete(),
             authProvider: 'manual',
             linkedGoogleEmail: admin.firestore.FieldValue.delete()
         };
 
         await Promise.all(docRefs.map(ref => ref.update(updates)));
+        for (const oldUid of prevUids) {
+            await admin.auth().setCustomUserClaims(oldUid, {}).catch(() => {});
+            await admin.auth().revokeRefreshTokens(oldUid).catch(() => {});
+        }
 
         return { success: true, message: 'Google account unlinked safely' };
     } catch (error) {
@@ -1578,6 +1595,9 @@ exports.setupEmployeePassword = secureOnCall(async (request) => {
         if (verifiedEmployeeId && verifiedEmployeeId !== inputId) {
             throw new functions.https.HttpsError('permission-denied', 'Employee ID does not match your verified account.');
         }
+        if (!verifiedEmployeeId && docRef.id !== callerUid && ownData.portalId !== inputId) {
+            throw new functions.https.HttpsError('permission-denied', 'Cannot set password: account verification incomplete.');
+        }
 
         // Hash with bcrypt (secure, salted, slow)
         const passwordHash = await hashPassword(newPassword);
@@ -1598,13 +1618,13 @@ exports.setupEmployeePassword = secureOnCall(async (request) => {
         ]);
         allSubs.docs.forEach(d => {
             const data = d.data();
-            if (d.id === callerUid || data.uid === callerUid || data.linkedUid === callerUid || data.portalId === callerUid || data.employeeId === cleanId) {
+            if (d.id === callerUid || data.uid === callerUid || data.linkedUid === callerUid || data.portalId === callerUid || (verifiedEmployeeId && data.employeeId === verifiedEmployeeId)) {
                 batch.update(d.ref, updatePayload);
             }
         });
         allEmps.docs.forEach(d => {
             const data = d.data();
-            if (d.id === callerUid || data.uid === callerUid || data.linkedUid === callerUid || data.portalId === callerUid || data.employeeId === cleanId) {
+            if (d.id === callerUid || data.uid === callerUid || data.linkedUid === callerUid || data.portalId === callerUid || (verifiedEmployeeId && data.employeeId === verifiedEmployeeId)) {
                 batch.update(d.ref, updatePayload);
             }
         });
@@ -1698,6 +1718,13 @@ exports.selfLinkGoogleAccount = secureOnCall(async (request) => {
             throw new functions.https.HttpsError('permission-denied', 'You can only link Google account for your own account');
         }
 
+        const ownSnap = await docRef.get();
+        const ownEmpId = String(ownSnap.data()?.employeeId || '').trim().toUpperCase();
+        const cleanInputId = employeeId.trim().toUpperCase();
+        if (!ownEmpId || ownEmpId !== cleanInputId) {
+            throw new functions.https.HttpsError('permission-denied', 'Employee ID does not match your authenticated account.');
+        }
+
         // Check Google account conflict (make sure this Google account isn't used by another user)
         const normalizedGoogleEmail = email.toLowerCase().trim();
 
@@ -1720,8 +1747,12 @@ exports.selfLinkGoogleAccount = secureOnCall(async (request) => {
 
         const empChecks = await Promise.all([
             db.collection('employees').where('uid', '==', googleUid).get(),
+            db.collection('employees').where('linkedUid', '==', googleUid).get(),
+            db.collection('employees').where('googleUid', '==', googleUid).get(),
             db.collection('employees').where('linkedGoogleEmail', '==', normalizedGoogleEmail).get(),
             db.collection('onboarding_submissions').where('uid', '==', googleUid).get(),
+            db.collection('onboarding_submissions').where('linkedUid', '==', googleUid).get(),
+            db.collection('onboarding_submissions').where('googleUid', '==', googleUid).get(),
             db.collection('onboarding_submissions').where('linkedGoogleEmail', '==', normalizedGoogleEmail).get()
         ]);
 
@@ -1752,7 +1783,7 @@ exports.selfLinkGoogleAccount = secureOnCall(async (request) => {
         const batch = db.batch();
         batch.update(docRef, linkPayload);
 
-        const cleanId = employeeId.trim().toUpperCase();
+        const cleanId = ownEmpId;
         const [allSubs, allEmps] = await Promise.all([
             db.collection('onboarding_submissions').where('employeeId', '==', cleanId).get(),
             db.collection('employees').where('employeeId', '==', cleanId).get()
@@ -1837,6 +1868,7 @@ exports.adminControlEmployeeAuth = secureOnCall(async (request) => {
             const updates = {
                 uid: admin.firestore.FieldValue.delete(),
                 linkedUid: 'none',
+                googleUid: admin.firestore.FieldValue.delete(),
                 authProvider: 'manual',
                 linkedGoogleEmail: admin.firestore.FieldValue.delete()
             };
@@ -2514,6 +2546,7 @@ exports.moveStorageFolder = secureOnCall(async (request) => {
         await Promise.all(movePromises);
         return { success: true };
     } catch (error) {
+        if (error instanceof functions.https.HttpsError) throw error;
         console.error('Error moving storage folder:', error);
         throw new functions.https.HttpsError('internal', 'Failed to move storage folder.');
     }
@@ -3433,6 +3466,7 @@ exports.getSystemMetrics = secureOnCall(async (request) => {
         };
 
     } catch (error) {
+        if (error instanceof functions.https.HttpsError) throw error;
         console.error('getSystemMetrics failed:', error);
         throw new functions.https.HttpsError('internal', 'Failed to retrieve system metrics.');
     }
@@ -3797,8 +3831,8 @@ exports.getUploadUrl = secureOnCall(async (request) => {
     if (context === 'employee' && firstSegment !== 'employees') {
         throw new functions.https.HttpsError('invalid-argument', 'Employee uploads must reside under employees/.');
     }
-    if (context === 'profile' && firstSegment !== 'profile' && firstSegment !== 'employees') {
-        throw new functions.https.HttpsError('invalid-argument', 'Profile uploads must reside under profile/ or employees/.');
+    if (context === 'profile' && firstSegment !== 'profile' && firstSegment !== 'employees' && firstSegment !== 'staff_accounts') {
+        throw new functions.https.HttpsError('invalid-argument', 'Profile uploads must reside under profile/, employees/, or staff_accounts/.');
     }
 
     const db = admin.firestore();
@@ -4030,13 +4064,10 @@ exports.getUploadUrl = secureOnCall(async (request) => {
                         }
                     }
                 } else {
-                    // Other general admin assets
-                    const [userSnap, staffAccSnap] = await Promise.all([
-                        db.collection('users').doc(uid).get(),
-                        db.collection('staff_accounts').doc(uid).get()
-                    ]);
-                    const adminDoc = staffAccSnap.exists ? staffAccSnap.data() : (userSnap.exists ? userSnap.data() : null);
-                    if (adminDoc && adminDoc.isDisabled !== true && adminDoc.isActive !== false) {
+                    // Other general admin assets: require explicit system/website/site management permission
+                    const allowedGeneralPrefixes = ['site_assets/', 'blog_assets/', 'portal_assets/'];
+                    const isAllowedPrefix = allowedGeneralPrefixes.some(p => normalizedPath.startsWith(p));
+                    if (isAllowedPrefix && (permissions.includes('MANAGE_SYSTEM') || permissions.includes('MANAGE_WEBSITE') || permissions.includes('MANAGE_SITES') || permissions.includes('SITES_MANAGE'))) {
                         isAuthorized = true;
                     }
                 }
@@ -4172,9 +4203,9 @@ const computeAndApplyUserClaims = async (uid, resolvedDocId = null, explicitDoc 
         'ACCOUNT_UPDATES_VIEW_SCOPE_ALL', 'RESIGNATIONS_VIEW_SCOPE_ALL', 'DISCIPLINE_VIEW_SCOPE_ALL',
         'MANAGE_SITES', 'MANAGE_ALL_SITES', 'SITES_MANAGE', 'SITES_EDIT_INFO', 'SITES_DELETE',
         'SUBMISSIONS_APPROVE', 'SUBMISSIONS_REJECT', 'SUBMISSIONS_ADD_COMMENTS', 'SUBMISSIONS_EDIT_COMMENTS',
-        'SUBMISSIONS_REVERT_DECISION', 'SUBMISSIONS_CREATE_CORRECTION_LINK', 'SUBMISSIONS_VIEW_CORRECTION_LINKS',
+        'SUBMISSIONS_REVERT_DECISION', 'SUBMISSIONS_CREATE_CORRECTION_LINK', 'SUBMISSIONS_VIEW_CORRECTION_LINKS', 'SUBMISSIONS_ASSIGN_EMPLOYEE_ID',
         'DELETE_SUBMISSION', 'DELETE_EMPLOYEE', 'EMPLOYEES_IMPORT',
-        'EMPLOYEES_MANAGE_DEPLOYMENTS', 'EMPLOYEES_MANAGE_CLIENT_IDS', 'EMPLOYEES_REQUEST_CORRECTION',
+        'EMPLOYEES_MANAGE_DEPLOYMENTS', 'EMPLOYEES_MANAGE_CLIENT_IDS', 'EMPLOYEES_REQUEST_CORRECTION', 'EMPLOYEES_CREATE_CORRECTION_LINK',
         'EMPLOYEES_MARK_PROFILE_COMPLETE', 'EMPLOYEES_TAB_RECYCLE_BIN', 'EMPLOYEES_CORRECT_ID',
         'LEAVES_APPROVE', 'LEAVES_DELETE', 'LEAVES_MANAGE_BALANCES',
         'MANAGE_LEAVE_TYPES', 'ACCOUNT_UPDATES_APPROVE', 'ACCOUNT_UPDATES_DELETE', 'RESIGNATIONS_APPROVE',
@@ -4394,8 +4425,14 @@ async function handleStaffOrUserWritten(event, collectionName) {
 
         if (authUser) {
             if (!event.data?.after?.exists) {
-                await admin.auth().setCustomUserClaims(authUid, {});
-                console.log(`[TRIGGER: handleStaffOrUserWritten] Cleared claims for deleted doc ${collectionName}/${authUid}`);
+                // Guard against syncStaffGoogleLogin migration: do not wipe claims if an active doc exists under authUid
+                const activeDoc = await admin.firestore().collection(collectionName).doc(authUid).get();
+                if (activeDoc.exists && staffId !== authUid) {
+                    console.log(`[TRIGGER: handleStaffOrUserWritten] Skipping claim clear for migrated doc ${collectionName}/${staffId} -> ${authUid}`);
+                } else {
+                    await admin.auth().setCustomUserClaims(authUid, {});
+                    console.log(`[TRIGGER: handleStaffOrUserWritten] Cleared claims for deleted doc ${collectionName}/${authUid}`);
+                }
             } else {
                 await computeAndApplyUserClaims(authUid, staffId, afterData);
                 await event.data.after.ref.update({
@@ -4771,10 +4808,11 @@ exports.submitCorrectionServer = secureOnCall(async (request) => {
 
     if (!isAuthorized && request.auth) {
         const callerUid = request.auth.uid;
-        const callerEmail = (request.auth.token?.email || '').toLowerCase().trim();
+        const emailVerified = request.auth.token?.email_verified === true;
+        const callerEmail = emailVerified ? (request.auth.token?.email || '').toLowerCase().trim() : '';
         const targetEmail = (targetData.linkedGoogleEmail || targetData.email || reqData.linkedGoogleEmail || '').toLowerCase().trim();
         const isOwner = callerUid === targetData.uid || callerUid === targetData.linkedUid || (callerEmail && callerEmail === targetEmail);
-        const isAdmin = request.auth.token?.isSuperAdmin === true || (Array.isArray(request.auth.token?.permissions) && request.auth.token.permissions.includes('SUBMISSIONS_CREATE_CORRECTION_LINK'));
+        const isAdmin = request.auth.token?.isDisabled !== true && (request.auth.token?.isSuperAdmin === true || (Array.isArray(request.auth.token?.permissions) && request.auth.token.permissions.includes('SUBMISSIONS_CREATE_CORRECTION_LINK')));
         if (isOwner || isAdmin) {
             isAuthorized = true;
         }
@@ -5357,8 +5395,7 @@ exports.processRequestReviewServer = secureOnCall(async (request) => {
             });
         }
     } else if (normalizedAction === 'APPROVE') {
-        const isTargetFinal = Boolean(targetLevel && Number(targetLevel) >= maxLevels);
-        if (!effectiveBypass && !isTargetFinal && currentLevel < maxLevels) {
+        if (!effectiveBypass && currentLevel < maxLevels) {
             // Advance to next workflow level that has an assigned role
             let nextLvl = currentLevel + 1;
             let foundNext = levels.find(l => l.level === nextLvl && l.roleId);
@@ -6181,7 +6218,7 @@ exports.rejoinEmployeeServer = secureOnCall(async (request) => {
     if (token.isDisabled === true) {
         throw new functions.https.HttpsError('permission-denied', 'Account is disabled.');
     }
-    const isSuperAdmin = token.isSuperAdmin === true || token.roleId === 'super-admin' || token.roleId === 'role-super-admin';
+    let isSuperAdmin = token.isSuperAdmin === true || token.roleId === 'super-admin' || token.roleId === 'role-super-admin';
     const permissions = Array.isArray(token.permissions) ? token.permissions : [];
 
     // Verify permission: EMPLOYEES_ACTION_REJOIN, SUBMISSIONS_APPROVE or SuperAdmin (UDF-AUD-57)
@@ -6194,7 +6231,11 @@ exports.rejoinEmployeeServer = secureOnCall(async (request) => {
         const saSnap = await db.collection('staff_accounts').doc(uid).get();
         if (saSnap.exists) {
             const saData = saSnap.data();
+            if (saData.isDisabled === true || saData.isActive === false) {
+                throw new functions.https.HttpsError('permission-denied', 'Account is disabled or inactive.');
+            }
             if (saData.roleId === 'role-super-admin' || saData.roleId === 'super-admin') {
+                isSuperAdmin = true;
                 hasRejoinPerm = true;
             } else if (saData.roleId) {
                 const roleSnap = await db.collection('roles').doc(saData.roleId).get();
@@ -6223,6 +6264,7 @@ exports.rejoinEmployeeServer = secureOnCall(async (request) => {
     const origData = origEmpSnap.data();
 
     const resolvedSiteId = siteId || origData.currentSiteId || 'Unassigned';
+    const origSiteId = origData.currentSiteId || origData.siteId || '';
     if (!isSuperAdmin && resolvedSiteId && resolvedSiteId !== 'Unassigned') {
         const hasGlobalScope = permissions.includes('EMPLOYEES_VIEW_SCOPE_ALL') ||
             permissions.includes('SUBMISSIONS_VIEW_SCOPE_ALL') ||
@@ -6231,6 +6273,9 @@ exports.rejoinEmployeeServer = secureOnCall(async (request) => {
         const sitesManaged = Array.isArray(token.sitesManaged) ? token.sitesManaged : [];
         if (!hasGlobalScope && !sitesManaged.includes(resolvedSiteId)) {
             throw new functions.https.HttpsError('permission-denied', `You do not have management authority for site "${resolvedSiteId}".`);
+        }
+        if (!hasGlobalScope && origSiteId && origSiteId !== 'Unassigned' && !sitesManaged.includes(origSiteId)) {
+            throw new functions.https.HttpsError('permission-denied', `You do not have management authority for the employee's original site "${origSiteId}".`);
         }
     }
     const resolvedSiteName = siteName || origData.siteName || 'N/A';
@@ -6506,8 +6551,26 @@ exports.logClientAuditEvent = secureOnCall(async (request) => {
     const uid = request.auth.uid;
     const token = request.auth.token || {};
 
-    // SEC-12: Only verified staff and admins can write to corporate audit logs
-    const isStaffOrAdmin = token.isAdmin || token.isSuperAdmin || (token.roleId && token.roleId !== 'none' && token.roleId !== 'role-security-guard');
+    if (token.isDisabled === true) {
+        throw new functions.https.HttpsError('permission-denied', 'Account is disabled.');
+    }
+
+    // SEC-12: Only verified staff and admins can write to corporate audit logs (excluding guards and BGV vendors)
+    let isStaffOrAdmin = token.isAdmin || token.isSuperAdmin || (token.roleId && token.roleId !== 'none' && token.roleId !== 'role-security-guard' && token.roleId !== 'role-bgv-vendor');
+
+    if (!isStaffOrAdmin) {
+        const staffSnap = await admin.firestore().collection('staff_accounts').doc(uid).get();
+        if (staffSnap.exists) {
+            const sData = staffSnap.data();
+            if (sData.isDisabled === true || sData.isActive === false) {
+                throw new functions.https.HttpsError('permission-denied', 'Account is disabled.');
+            }
+            if (sData.roleId && sData.roleId !== 'role-security-guard' && sData.roleId !== 'role-bgv-vendor') {
+                isStaffOrAdmin = true;
+            }
+        }
+    }
+
     if (!isStaffOrAdmin) {
         throw new functions.https.HttpsError('permission-denied', 'Only staff and administrators can record audit log events.');
     }
@@ -6523,11 +6586,13 @@ exports.logClientAuditEvent = secureOnCall(async (request) => {
     const db = admin.firestore();
     const docRef = db.collection('audit_logs').doc();
 
+    const sanitizedDetails = String(details).slice(0, 2000);
+
     const entry = {
         action: String(action).toUpperCase(),
         actionType: String(action).toUpperCase(),
         targetModule: String(module).toUpperCase(),
-        details: String(details),
+        details: sanitizedDetails,
         targetId: targetId ? String(targetId) : null,
         actorId: uid,
         actorName,
@@ -6616,7 +6681,7 @@ exports.completeTrainingQuizServer = secureOnCall(async (request) => {
 
     // 3. Verify answer if question defined
     let correctAnswer = null;
-    if (questionId) {
+    if (questionId && questionId !== 'default') {
         const quizDoc = await db.collection('safety_quizzes').doc(questionId).get();
         if (quizDoc.exists) {
             correctAnswer = quizDoc.data().correctAnswer;
@@ -6624,6 +6689,9 @@ exports.completeTrainingQuizServer = secureOnCall(async (request) => {
     }
     if (!correctAnswer && rulesData.dailyQuiz && rulesData.dailyQuiz.correctAnswer) {
         correctAnswer = rulesData.dailyQuiz.correctAnswer;
+    }
+    if (!correctAnswer && (questionId === 'default' || !questionId)) {
+        correctAnswer = 'B';
     }
 
     if (!correctAnswer) {
@@ -6641,35 +6709,44 @@ exports.completeTrainingQuizServer = secureOnCall(async (request) => {
         };
     }
 
-    // 4. Atomically update user_engagement points and write to gamification_logs
+    // 4. Atomically update user_engagement points and write to gamification_logs inside transaction
     const engagementRef = db.collection('user_engagement').doc(targetDocId);
-    const logRef = db.collection('gamification_logs').doc();
+    const logRef = db.collection('gamification_logs').doc(`quiz_${targetDocId}_${today}`);
 
-    const batch = db.batch();
+    await db.runTransaction(async (tx) => {
+        const [engSnap, existingQuizLog] = await Promise.all([tx.get(engagementRef), tx.get(logRef)]);
+        if (existingQuizLog.exists || (engSnap.exists && engSnap.data().lastQuizDate === today)) {
+            throw new functions.https.HttpsError('already-exists', 'You have already completed the daily quiz today.');
+        }
 
-    batch.set(engagementRef, {
-        points: admin.firestore.FieldValue.increment(quizPoints),
-        lastQuizDate: today,
-        lastUpdated: admin.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
+        let migratedPoints = 0;
+        if (targetDocId !== uid) {
+            const uidEngSnap = await tx.get(db.collection('user_engagement').doc(uid));
+            if (uidEngSnap.exists) {
+                if (!engSnap.exists) {
+                    migratedPoints = Number(uidEngSnap.data().points || 0);
+                }
+                tx.delete(uidEngSnap.ref);
+            }
+        }
 
-    // Clean up duplicate uid document if targetDocId !== uid to prevent duplicate leaderboard entries (UDF-AUD-177)
-    if (targetDocId !== uid) {
-        batch.delete(db.collection('user_engagement').doc(uid));
-    }
+        tx.set(engagementRef, {
+            points: admin.firestore.FieldValue.increment(quizPoints + migratedPoints),
+            lastQuizDate: today,
+            lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
 
-    batch.set(logRef, {
-        userId: targetDocId,
-        userUid: uid,
-        type: 'QUIZ',
-        questionId: questionId || 'daily_safety_quiz',
-        selectedAnswer,
-        pointsAwarded: quizPoints,
-        date: today,
-        timestamp: admin.firestore.FieldValue.serverTimestamp()
+        tx.set(logRef, {
+            userId: targetDocId,
+            userUid: uid,
+            type: 'QUIZ',
+            questionId: questionId || 'daily_safety_quiz',
+            selectedAnswer,
+            pointsAwarded: quizPoints,
+            date: today,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
     });
-
-    await batch.commit();
 
     console.log(`[completeTrainingQuizServer] Awarded ${quizPoints} pts to ${targetDocId} for quiz on ${today}`);
     return {
@@ -7301,8 +7378,9 @@ exports.syncSubmissionToSheetsServer = secureOnCall({ timeoutSeconds: 120 }, asy
         const folderUrl = data.driveFolderUrl || '';
 
         const status = await appendSubmissionToSheetsServer(data, formData, folderUrl);
+        const isSheetsSuccess = status === 'sheets_appended' || status === 'form_synced' || status === 'already_synced';
         await subSnap.ref.update({
-            googleFormSyncStatus: 'synced',
+            googleFormSyncStatus: isSheetsSuccess ? 'synced' : 'failed',
             googleFormSyncedAt: new Date().toISOString(),
             googleSheetsSyncStatus: status
         });
@@ -8227,12 +8305,6 @@ exports.promoteEmployeeServer = secureOnCall({ timeoutSeconds: 60 }, async (requ
         lastUpdated: new Date().toISOString()
     };
 
-    if (newSiteId) {
-        updates.currentSiteId = newSiteId;
-        updates.assignedSiteIds = [newSiteId];
-        if (newSiteName) updates.siteName = newSiteName;
-    }
-
     if (Array.isArray(empData.activeAssignments) && empData.activeAssignments.length > 0) {
         updates.activeAssignments = empData.activeAssignments.map(a => {
             if (a.type === 'PRIMARY') {
@@ -8244,6 +8316,15 @@ exports.promoteEmployeeServer = secureOnCall({ timeoutSeconds: 60 }, async (requ
             }
             return a;
         });
+    }
+
+    if (newSiteId) {
+        updates.currentSiteId = newSiteId;
+        const secondarySites = (updates.activeAssignments || empData.activeAssignments || [])
+            .filter(a => a && a.type !== 'PRIMARY' && a.siteId)
+            .map(a => a.siteId);
+        updates.assignedSiteIds = Array.from(new Set([newSiteId, ...secondarySites]));
+        if (newSiteName) updates.siteName = newSiteName;
     }
 
     const batch = db.batch();
@@ -8345,8 +8426,8 @@ exports.bulkImportEmployeesServer = secureOnCall({ timeoutSeconds: 300, memory: 
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
 
-    // Process in batches of 400
-    const CHUNK_SIZE = 400;
+    // Process in batches of 200 (2 writes per row = 400 ops, safely below Firestore 500-op limit - UDF-AUD-438)
+    const CHUNK_SIZE = 200;
     for (let c = 0; c < rows.length; c += CHUNK_SIZE) {
         const chunk = rows.slice(c, c + CHUNK_SIZE);
         const batch = db.batch();
@@ -8452,17 +8533,20 @@ exports.bulkImportEmployeesServer = secureOnCall({ timeoutSeconds: 300, memory: 
                     }
                 }
 
-                const empRef = db.collection('employees').doc(submissionId);
-                const subRef = db.collection('onboarding_submissions').doc(submissionId);
-
-                // Skip existing employee documents when overwriteMode is 'skip' (UDF13-05)
+                let targetDocId = submissionId;
+                const existingEmpSnap = await db.collection('employees').where('employeeId', '==', empId).limit(1).get();
                 if (overwriteMode === 'skip') {
-                    const existingEmpSnap = await db.collection('employees').where('employeeId', '==', empId).limit(1).get();
                     if (!existingEmpSnap.empty) {
                         warnings.push({ row: rowNum, warning: `Skipped existing employee ID "${empId}".` });
                         continue;
                     }
+                } else if (overwriteMode === 'overwrite' && !existingEmpSnap.empty) {
+                    targetDocId = existingEmpSnap.docs[0].id;
+                    employeeRecord.portalId = existingEmpSnap.docs[0].data().portalId || targetDocId;
                 }
+
+                const empRef = db.collection('employees').doc(targetDocId);
+                const subRef = db.collection('onboarding_submissions').doc(targetDocId);
 
                 batch.set(empRef, employeeRecord, { merge: overwriteMode === 'overwrite' });
                 batch.set(subRef, {
@@ -9040,8 +9124,7 @@ exports.completeBgvReviewServer = secureOnCall({ timeoutSeconds: 60 }, async (re
     const permissions = Array.isArray(token.permissions) ? token.permissions : [];
     let hasBgvPerm = isSuperAdmin ||
         permissions.includes('BGV_APPROVE_REJECT') ||
-        permissions.includes('BGV_MANAGE') ||
-        permissions.includes('BGV_UPLOAD_CERTIFICATE');
+        permissions.includes('BGV_MANAGE');
 
     const db = admin.firestore();
     if (!hasBgvPerm) {
@@ -9054,7 +9137,7 @@ exports.completeBgvReviewServer = secureOnCall({ timeoutSeconds: 60 }, async (re
         if (!allowed && saData.roleId) {
             const roleSnap = await db.collection('roles').doc(saData.roleId).get();
             const rolePerms = (roleSnap.exists && Array.isArray(roleSnap.data().permissions)) ? roleSnap.data().permissions : [];
-            allowed = rolePerms.includes('BGV_APPROVE_REJECT') || rolePerms.includes('BGV_MANAGE') || rolePerms.includes('BGV_UPLOAD_CERTIFICATE');
+            allowed = rolePerms.includes('BGV_APPROVE_REJECT') || rolePerms.includes('BGV_MANAGE');
         }
         if (!allowed) {
             throw new functions.https.HttpsError('permission-denied', 'Missing permission to approve or reject BGV.');
@@ -9069,7 +9152,10 @@ exports.completeBgvReviewServer = secureOnCall({ timeoutSeconds: 60 }, async (re
     }
 
     const bgvData = bgvSnap.data();
-    const targetEmpId = employeeId || bgvData.employeeId;
+    const targetEmpId = bgvData.employeeId;
+    if (employeeId && bgvData.employeeId && employeeId.trim() !== String(bgvData.employeeId).trim()) {
+        throw new functions.https.HttpsError('invalid-argument', 'employeeId does not match the BGV record.');
+    }
     const empSnap = await resolveEmployeeDocAdmin(db, targetEmpId);
     const empData = empSnap && empSnap.exists ? empSnap.data() : {};
     const empSiteId = empData.currentSiteId || bgvData.siteId || '';

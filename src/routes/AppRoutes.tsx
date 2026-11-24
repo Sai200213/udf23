@@ -244,6 +244,7 @@ const AppRoutes: React.FC<AppRoutesProps> = (props) => {
                             initialDraft={props.activeDraft}
                         />
                     } />
+                    <Route path="/employee/login" element={<Navigate to="/login" replace />} />
                     <Route path="/employee/dashboard" element={<Navigate to="/dashboard" replace />} />
                     <Route path="/employee/*" element={
                         <AuthGuard allowedUserTypes={[UserType.EMPLOYEE]}>
@@ -286,8 +287,8 @@ const AppRoutes: React.FC<AppRoutesProps> = (props) => {
                 <Route path="/blog" element={<Navigate to="/blogs" replace />} />
                 <Route path="/about" element={<AboutPage />} />
                 <Route path="/business" element={<BusinessSolutionsPage />} />
+                <Route path="/services" element={<BusinessSolutionsPage />} />
                 <Route path="/dashboard" element={<BlogDashboardPage />} />
-                <Route path="/services" element={<Navigate to="/business" replace />} />
                 <Route path="/contact" element={<ContactPage />} />
                 <Route path="/careers" element={<CareersPage />} />
                 <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />

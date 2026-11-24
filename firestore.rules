@@ -63,6 +63,7 @@ service cloud.firestore {
              hasPermission('SUBMISSIONS_REVERT_DECISION') ||
              hasPermission('SUBMISSIONS_CREATE_CORRECTION_LINK') ||
              hasPermission('SUBMISSIONS_VIEW_CORRECTION_LINKS') ||
+             hasPermission('SUBMISSIONS_ASSIGN_EMPLOYEE_ID') ||
              hasPermission('EMPLOYEES_MANAGE_DEPLOYMENTS') ||
              hasPermission('EMPLOYEES_MANAGE_CLIENT_IDS') ||
              hasPermission('EMPLOYEES_REQUEST_CORRECTION') ||
@@ -81,6 +82,7 @@ service cloud.firestore {
     function canAdminDeleteEmployees() {
       return isSuperAdmin() ||
              hasPermission('DELETE_EMPLOYEE') ||
+             hasPermission('DELETE_SUBMISSION') ||
              hasPermission('SUBMISSIONS_APPROVE');
     }
 
@@ -159,7 +161,8 @@ service cloud.firestore {
         (docId == 'workflows' && hasPermission('MANAGE_WORKFLOWS')) ||
         (docId == 'form_sections' && (hasPermission('MANAGE_FORMS') || hasPermission('MANAGE_FORM_SECTIONS'))) ||
         (docId == 'portal_config' && (hasPermission('MANAGE_SYSTEM') || hasPermission('MANAGE_WORKFLOWS') || hasPermission('BGV_CONFIGURE_FIELDS'))) ||
-        (docId == 'leave_policy' && (hasPermission('MANAGE_LEAVE_TYPES') || hasPermission('LEAVES_APPROVE'))) ||
+        (docId == 'roles' && (isSuperAdmin() || hasPermission('MANAGE_ROLES'))) ||
+        (docId == 'leave_policy' && (hasPermission('MANAGE_LEAVE_TYPES') || hasPermission('LEAVES_APPROVE') || hasPermission('LEAVES_MANAGE_BALANCES'))) ||
         (docId == 'editable_fields' && (hasPermission('MANAGE_SYSTEM') || hasPermission('MANAGE_WORKFLOWS'))) ||
         (docId == 'gamification_rules' && (hasPermission('MANAGE_SYSTEM') || hasPermission('GAMIFICATION_MANAGE'))) ||
         (docId == 'legacy_claim_config' && (hasPermission('MANAGE_SYSTEM') || hasPermission('EMPLOYEES_IMPORT'))) ||
@@ -409,8 +412,12 @@ service cloud.firestore {
                        isOwnerOfPortalId(resource.data.employeeId) ||
                        (resource.data.get('portalId', '') != '' && isOwnerOfPortalId(resource.data.portalId))
                      ));
-      allow create, update: if (hasPermission('DISCIPLINE_MANAGE') || hasPermission('DISCIPLINE_CREATE') || hasPermission('DISCIPLINE_ISSUE') || isSuperAdmin()) && (request.resource.data.get('siteId', '') == '' || canStaffViewSite(request.resource.data.get('siteId', '')));
-      allow delete: if hasPermission('DISCIPLINE_MANAGE') || hasPermission('DISCIPLINE_DELETE') || isSuperAdmin();
+      allow create: if (hasPermission('DISCIPLINE_MANAGE') || hasPermission('DISCIPLINE_CREATE') || hasPermission('DISCIPLINE_ISSUE') || isSuperAdmin()) && (request.resource.data.get('siteId', '') == '' || canStaffViewSite(request.resource.data.get('siteId', '')));
+      allow update: if (hasPermission('DISCIPLINE_MANAGE') || hasPermission('DISCIPLINE_CREATE') || hasPermission('DISCIPLINE_ISSUE') || isSuperAdmin()) &&
+        (resource.data.get('siteId', '') == '' || canStaffViewSite(resource.data.get('siteId', ''))) &&
+        (request.resource.data.get('siteId', '') == '' || canStaffViewSite(request.resource.data.get('siteId', '')));
+      allow delete: if (hasPermission('DISCIPLINE_MANAGE') || hasPermission('DISCIPLINE_DELETE') || isSuperAdmin()) &&
+        (resource.data.get('siteId', '') == '' || canStaffViewSite(resource.data.get('siteId', '')));
     }
 
     // ─── Legacy Employee Imports ─────────────────────────────────────────────
@@ -431,12 +438,18 @@ service cloud.firestore {
       ));
       // SEC-09: Direct creation restricted to admins; non-admin notifications and role broadcasts route via sendNotificationServer
       allow create: if isAdmin();
-      // SEC-09: Direct personal notifications can be updated/deleted by users; broadcast notifications permit adding to readBy (UDF-AUD-175)
+      // SEC-09: Direct personal notifications can be updated/deleted by users; broadcast notifications permit adding to readBy (UDF-AUD-175, UDF-AUD-427)
       allow update: if isAdmin() || (isAuthenticated() && (
         resource.data.targetUserId == request.auth.uid ||
         (request.auth.token.get('employeeId', '') != '' && resource.data.targetUserId == request.auth.token.employeeId) ||
         isOwnerOfPortalId(resource.data.targetUserId) ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']))
+        (
+          isRegisteredUser() &&
+          resource.data.targetUserId in [('ROLE:' + getUserRoleId()), 'ROLE:employee', 'ROLE:role-security-guard'] &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']) &&
+          request.resource.data.readBy.hasAll(resource.data.get('readBy', [])) &&
+          request.resource.data.readBy.size() <= resource.data.get('readBy', []).size() + 1
+        )
       ));
       allow delete: if isAdmin() || (isAuthenticated() && (
         resource.data.targetUserId == request.auth.uid ||
@@ -465,17 +478,25 @@ service cloud.firestore {
         isOwnerOfPortalId(id) || 
         isOwnerOfPortalId(resource.data.employeeId)
       ));
-      allow write: if isSuperAdmin() || (
-        isAdmin() && 
-        hasPermission('LEAVES_MANAGE_BALANCES') && 
+      allow create: if isSuperAdmin() || (
+        isAdmin() && hasPermission('LEAVES_MANAGE_BALANCES') &&
         (request.resource.data.get('siteId', '') == '' || canStaffViewSite(request.resource.data.get('siteId', '')))
+      );
+      allow update: if isSuperAdmin() || (
+        isAdmin() && hasPermission('LEAVES_MANAGE_BALANCES') &&
+        (resource.data.get('siteId', '') == '' || canStaffViewSite(resource.data.get('siteId', ''))) &&
+        (request.resource.data.get('siteId', '') == '' || canStaffViewSite(request.resource.data.get('siteId', '')))
+      );
+      allow delete: if isSuperAdmin() || (
+        isAdmin() && hasPermission('LEAVES_MANAGE_BALANCES') &&
+        (resource.data.get('siteId', '') == '' || canStaffViewSite(resource.data.get('siteId', '')))
       );
     }
 
     // ─── Leave Policy ────────────────────────────────────────────────────────
     match /leave_policy/{id} {
       allow read: if isAuthenticated();
-      allow write: if isSuperAdmin();
+      allow write: if isSuperAdmin() || hasPermission('LEAVES_MANAGE_BALANCES') || hasPermission('MANAGE_LEAVE_TYPES');
     }
 
     // ─── Portal Config ───────────────────────────────────────────────────────
@@ -519,10 +540,11 @@ service cloud.firestore {
                          resource.data.get('vendorName', '') == request.auth.token.get('name', '')
                        ))
                      ));
-      allow create: if isSuperAdmin() || 
-                       hasPermission('BGV_MANAGE') || 
-                       hasPermission('BGV_DISPATCH_VENDOR');
-      // SEC-06 & UDF-AUD-09: Status changes to final clearance handled via Cloud Function (completeBgvReviewServer)
+      allow create: if isSuperAdmin() || (
+                       (hasPermission('BGV_MANAGE') || hasPermission('BGV_DISPATCH_VENDOR')) &&
+                       (request.resource.data.get('siteId', '') == '' || hasPermission('BGV_VIEW_SCOPE_ALL') || hasPermission('EMPLOYEES_VIEW_SCOPE_ALL') || canStaffViewSite(request.resource.data.get('siteId', '')))
+                     );
+      // SEC-06 & UDF-AUD-09 & UDF-AUD-422: Status changes to final clearance handled via Cloud Function (completeBgvReviewServer)
       // Non-final status updates (UNDER_PROCESS, VENDOR_SUBMITTED) allowed for authorized staff and assigned vendors
       allow update: if isSuperAdmin() || (
         (hasPermission('BGV_MANAGE') || hasPermission('BGV_DISPATCH_VENDOR') || hasPermission('BGV_UPLOAD_CERTIFICATE') || hasPermission('BGV_APPROVE_REJECT')) &&
@@ -536,10 +558,9 @@ service cloud.firestore {
           (resource.data.get('vendorName', '') != '' && (
             resource.data.get('vendorName', '') == request.auth.token.get('email', '') ||
             resource.data.get('vendorName', '') == request.auth.token.get('name', '')
-          )) ||
-          hasPermission('BGV_VENDOR')
+          ))
         ) &&
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['approvedBy', 'approvedDate', 'rejectionReason', 'result', 'internalStatus']) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['approvedBy', 'approvedDate', 'rejectionReason', 'result', 'internalStatus', 'vendorId', 'vendorName', 'employeeDocId', 'siteId']) &&
         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['status']) ||
          request.resource.data.status in ['VENDOR_SUBMITTED', 'UNDER_PROCESS', 'PENDING', 'vendor_submitted', 'under_process', 'in-progress', 'Vendor Submitted', 'Under Process'])
       );
@@ -651,11 +672,14 @@ service cloud.firestore {
 
     // ─── Central Recycle Bin (Soft Delete & Universal Undo Vault - Super Admin / Delegated HR) ───────────
     match /recycle_bin/{id} {
-      allow read: if isSuperAdmin() || hasPermission('EMPLOYEES_TAB_RECYCLE_BIN');
+      allow read: if isSuperAdmin() || (
+        hasPermission('EMPLOYEES_TAB_RECYCLE_BIN') && 
+        (hasPermission('EMPLOYEES_VIEW_SCOPE_ALL') || resource.data.get('siteId', '') == '' || canStaffViewSite(resource.data.get('siteId', '')))
+      );
       allow update, delete: if isSuperAdmin() ||
-        (hasPermission('EMPLOYEES_TAB_RECYCLE_BIN') && !resource.data.get('itemType', '').matches('(?i)(STAFF|ROLE)'));
-      // SEC-07: Non-superadmins cannot archive STAFF or ROLE documents to prevent Trojan privilege escalation
-      allow create: if isSuperAdmin() || (isAdmin() && !request.resource.data.get('itemType', '').matches('(?i)(STAFF|ROLE)'));
+        (hasPermission('EMPLOYEES_TAB_RECYCLE_BIN') && !resource.data.get('itemType', '').matches('(?i)(STAFF|ROLE|USER|WORKFLOW)'));
+      // SEC-07: Non-superadmins cannot archive STAFF, ROLE, USER, or WORKFLOW documents to prevent Trojan privilege escalation
+      allow create: if isSuperAdmin() || (isAdmin() && !request.resource.data.get('itemType', '').matches('(?i)(STAFF|ROLE|USER|WORKFLOW)'));
     }
 
     // ─── Safety Quizzes ──────────────────────────────────────────────────────
