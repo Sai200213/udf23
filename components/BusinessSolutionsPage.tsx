@@ -1,20 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-    Shield, 
-    Eye, 
-    Users, 
-    PawPrint, 
-    Car, 
-    Calendar, 
-    Cpu, 
-    Download, 
-    Award, 
-    ShieldCheck, 
-    ArrowRight, 
-    Building, 
-    Phone, 
-    Mail, 
+import {
+    Shield,
+    Eye,
+    Users,
+    PawPrint,
+    Car,
+    Calendar,
+    Cpu,
+    Download,
+    Award,
+    ShieldCheck,
+    ArrowRight,
+    Building,
+    Phone,
+    Mail,
     Clock,
     MapPin,
     CheckCircle2
@@ -130,17 +130,17 @@ const BusinessSolutionsPage: React.FC = () => {
                     <p className="text-slate-300 text-sm sm:text-base md:text-lg max-w-2xl mx-auto mb-8 font-medium leading-relaxed">
                         Trusted security guarding, advanced drone surveillance, rapid response centers, and complete statutory compliance for commercial properties.
                     </p>
-                    
+
                     {/* Action buttons */}
                     <div className="flex flex-col sm:flex-row gap-4">
-                        <a 
-                            href="/UDF_Brochure.pdf" 
-                            download 
+                        <a
+                            href="/UDF_Brochure.pdf"
+                            download
                             className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-8 rounded-xl text-sm transition-all shadow-md flex items-center justify-center gap-2 hover:shadow-blue-500/20"
                         >
                             <Download size={16} /> Download Corporate Brochure
                         </a>
-                        <button 
+                        <button
                             onClick={() => {
                                 const el = document.getElementById('proposal-form');
                                 if (el) el.scrollIntoView({ behavior: 'smooth' });
@@ -192,8 +192,8 @@ const BusinessSolutionsPage: React.FC = () => {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                         {servicesList.map((service, index) => (
-                            <div 
-                                key={index} 
+                            <div
+                                key={index}
                                 className="bg-white rounded-2xl border border-slate-200 p-8 hover:shadow-md transition-shadow flex flex-col"
                             >
                                 <div className="bg-blue-50 p-4 rounded-2xl w-14 h-14 flex items-center justify-center mb-6">
@@ -236,7 +236,7 @@ const BusinessSolutionsPage: React.FC = () => {
                                 </div>
                             </div>
                         </div>
-                        
+
                         <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
                             {certificationsList.map((cert, index) => (
                                 <div key={index} className="bg-slate-50 border border-slate-200 p-5 rounded-2xl flex items-start space-x-4">
@@ -324,11 +324,11 @@ const BusinessSolutionsPage: React.FC = () => {
                             </ul>
                         </div>
 
-                        <form 
+                        <form
                             id="proposal-form"
-                            className="space-y-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs" 
-                            onSubmit={async (e) => { 
-                                e.preventDefault(); 
+                            className="space-y-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs"
+                            onSubmit={async (e) => {
+                                e.preventDefault();
                                 if (!companyName.trim() || !contactNamePhone.trim() || !techScope.trim()) {
                                     setSubmitError('Please fill in all required fields.');
                                     return;
@@ -362,9 +362,9 @@ const BusinessSolutionsPage: React.FC = () => {
                                     <CheckCircle2 size={28} className="mx-auto text-green-600 mb-2" />
                                     <h4 className="text-sm font-bold text-green-900 mb-1">Proposal Request Received</h4>
                                     <p className="text-xs text-green-700">Thank you! An Enterprise Security Director from Unique Delta Force will contact you shortly.</p>
-                                    <button 
-                                        type="button" 
-                                        onClick={() => setSubmitted(false)} 
+                                    <button
+                                        type="button"
+                                        onClick={() => setSubmitted(false)}
                                         className="mt-3 text-xs font-bold text-green-800 underline"
                                     >
                                         Submit another request
@@ -379,39 +379,39 @@ const BusinessSolutionsPage: React.FC = () => {
                                     )}
                                     <div>
                                         <label className="block text-[10px] uppercase font-extrabold tracking-wider text-slate-500 mb-1.5">Company Name *</label>
-                                        <input 
-                                            required 
-                                            type="text" 
+                                        <input
+                                            required
+                                            type="text"
                                             value={companyName}
                                             onChange={e => setCompanyName(e.target.value)}
-                                            placeholder="e.g. Acme Tech Park" 
-                                            className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" 
+                                            placeholder="e.g. Acme Tech Park"
+                                            className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
                                         />
                                     </div>
                                     <div>
                                         <label className="block text-[10px] uppercase font-extrabold tracking-wider text-slate-500 mb-1.5">Contact Name & Phone *</label>
-                                        <input 
-                                            required 
-                                            type="text" 
+                                        <input
+                                            required
+                                            type="text"
                                             value={contactNamePhone}
                                             onChange={e => setContactNamePhone(e.target.value)}
-                                            placeholder="e.g. Ramesh Kumar (+91 90000 00000)" 
-                                            className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" 
+                                            placeholder="e.g. Ramesh Kumar (+91 90000 00000)"
+                                            className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
                                         />
                                     </div>
                                     <div>
                                         <label className="block text-[10px] uppercase font-extrabold tracking-wider text-slate-500 mb-1.5">Required Guards / Tech Scope *</label>
-                                        <textarea 
-                                            required 
-                                            rows={3} 
+                                        <textarea
+                                            required
+                                            rows={3}
                                             value={techScope}
                                             onChange={e => setTechScope(e.target.value)}
-                                            placeholder="Briefly describe your requirements (e.g. 5 guards, shift timings, drone patrols)..." 
+                                            placeholder="Briefly describe your requirements (e.g. 5 guards, shift timings, drone patrols)..."
                                             className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
                                         ></textarea>
                                     </div>
-                                    <button 
-                                        type="submit" 
+                                    <button
+                                        type="submit"
                                         disabled={submitting}
                                         className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"
                                     >
